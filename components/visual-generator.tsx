@@ -55,11 +55,19 @@ export function VisualGenerator() {
           referenceImageKey = uploaded.temporaryObjectKey;
 
           setStatus("正在提取非身份化视觉标签...");
-          const extracted = await fetch("/api/visual/extract-tags", {
+          const extractResponse = await fetch("/api/visual/extract-tags", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ temporaryObjectKey: uploaded.temporaryObjectKey }),
-          }).then((response) => response.json() as Promise<{ visualTags: typeof visualTags }>);
+          });
+
+          if (!extractResponse.ok) {
+            const body = (await extractResponse.json().catch(() => null)) as { message?: string } | null;
+            setStatus(body?.message ?? "视觉标签提取失败，请稍后重试。");
+            return;
+          }
+
+          const extracted = (await extractResponse.json()) as { visualTags: typeof visualTags };
           visualTags = extracted.visualTags;
         }
 

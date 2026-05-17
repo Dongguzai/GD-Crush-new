@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getPublicAssetContentType, getStorageService } from "@/lib/storage-service";
+import { getLocalStorageService, getPublicAssetContentType } from "@/lib/storage-service";
 
 export async function GET(
   _request: Request,
@@ -9,7 +9,7 @@ export async function GET(
   const key = path.join("/");
 
   try {
-    const object = await getStorageService().readObject(key);
+    const object = await getLocalStorageService().readObject(key);
     return new Response(Uint8Array.from(object.bytes), {
       headers: {
         "Content-Type": getPublicAssetContentType(key),
@@ -17,6 +17,6 @@ export async function GET(
       },
     });
   } catch {
-    return NextResponse.json({ error: "图片不存在。" }, { status: 404 });
+    return NextResponse.json({ error: "资源不存在。" }, { status: 404 });
   }
 }

@@ -20,6 +20,7 @@ import {
   getDevActions,
   getDevMemories,
   getDevMessages,
+  getDevMessagesForCrush,
   getDevProfileDraft,
   getDevGrowthMetrics,
   getDevSuggestions,
@@ -39,6 +40,7 @@ import { getServerEnv, hasDatabaseUrl } from "@/lib/env";
 import { auditEvents, crushProfiles, growthMetrics, users, userSettings } from "@/db/schema";
 import { getImageGenerationService, type GeneratedVisualAssetInput } from "@/lib/image-generation-service";
 import { getStorageService } from "@/lib/storage-service";
+import { getTtsService } from "@/lib/tts-service";
 import type { VisualTheme } from "@/lib/visual-prompts";
 
 export async function confirmCurrentUserAge() {
@@ -371,6 +373,28 @@ export async function attachMockVoiceToMessage(messageId: string) {
   return updateDevMessageAudio(messageId, `/api/voice/mock?messageId=${encodeURIComponent(messageId)}`);
 }
 
+export async function attachVoiceToMessage(input: {
+  messageId: string;
+  text: string;
+  speaker?: string | null;
+}) {
+  const userId = await getCurrentUserId();
+  const active = await getActiveDevCrush(userId);
+
+  if (!active || !getServerEnv().TTS_API_KEY) {
+    const message = await attachMockVoiceToMessage(input.messageId);
+    return { message, provider: "mock-tts" as const };
+  }
+
+  const audio = await getTtsService().synthesize({
+    text: input.text,
+    category: `crush-${active.id}-voice`,
+    speaker: input.speaker,
+  });
+  const message = await updateDevMessageAudio(input.messageId, audio.url);
+  return { message, provider: "seed-tts-2.0" as const };
+}
+
 export async function getCurrentVoiceProfile() {
   const userId = await getCurrentUserId();
   const active = await getActiveDevCrush(userId);
@@ -509,9 +533,10 @@ export async function destroyCurrentCrush(confirmText: string) {
   }
 
   const storage = getStorageService();
-  const [assets, materials] = await Promise.all([
+  const [assets, materials, messages] = await Promise.all([
     getDevVisualAssets(active.id),
     getDevMaterialsForCrush(active.id),
+    getDevMessagesForCrush(active.id),
   ]);
 
   await Promise.all([
@@ -525,6 +550,13 @@ export async function destroyCurrentCrush(confirmText: string) {
       .map((material) =>
         storage.deleteObject(material.storageUrl as string).catch((error) => {
           console.warn("[Storage] Failed to delete reference image", error);
+        }),
+      ),
+    ...messages
+      .filter((message) => message.audioUrl)
+      .map((message) =>
+        storage.deletePublicAssetByUrl(message.audioUrl as string).catch((error) => {
+          console.warn("[Storage] Failed to delete persisted voice asset", error);
         }),
       ),
   ]);

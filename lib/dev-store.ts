@@ -666,6 +666,14 @@ export async function getDevMessages(sessionId: string) {
   return data.messages.filter((message) => message.sessionId === sessionId);
 }
 
+export async function getDevMessagesForCrush(crushId: string) {
+  const data = await readStore();
+  const sessionIds = new Set(
+    data.chatSessions.filter((session) => session.crushId === crushId).map((session) => session.id),
+  );
+  return data.messages.filter((message) => sessionIds.has(message.sessionId));
+}
+
 export async function addDevMessage(input: {
   sessionId: string;
   role: "user" | "crush" | "coach" | "system";
