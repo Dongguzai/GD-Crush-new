@@ -4,6 +4,11 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, LockKeyhole, Sparkles } from "lucide-react";
 
+async function readErrorMessage(response: Response, fallback: string) {
+  const data = (await response.json().catch(() => null)) as { error?: string } | null;
+  return data?.error ?? fallback;
+}
+
 export function CreateCrushForm() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -40,7 +45,7 @@ export function CreateCrushForm() {
       });
 
       if (!crushResponse.ok) {
-        setError("创建 Crush 草稿失败，请检查输入。");
+        setError(await readErrorMessage(crushResponse, "创建 Crush 草稿失败，请检查输入。"));
         return;
       }
 
@@ -51,17 +56,22 @@ export function CreateCrushForm() {
       ].filter((item) => item.sanitizedText.trim().length > 0);
 
       for (const payload of materialPayloads) {
-        await fetch("/api/onboarding/materials", {
+        const materialResponse = await fetch("/api/onboarding/materials", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
+
+        if (!materialResponse.ok) {
+          setError(await readErrorMessage(materialResponse, "材料保存失败，请稍后重试。"));
+          return;
+        }
       }
 
       const analyzeResponse = await fetch("/api/onboarding/analyze", { method: "POST" });
 
       if (!analyzeResponse.ok) {
-        setError("AI 建档草稿生成失败，请稍后重试。");
+        setError(await readErrorMessage(analyzeResponse, "AI 建档草稿生成失败，请稍后重试。"));
         return;
       }
 

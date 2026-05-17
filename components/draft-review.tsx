@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, PencilLine } from "lucide-react";
 
@@ -17,8 +17,11 @@ type Draft = {
 export function DraftReview({ draft }: { draft: Draft }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   function confirm() {
+    setError(null);
+
     startTransition(async () => {
       const response = await fetch("/api/onboarding/confirm-draft", {
         method: "POST",
@@ -32,7 +35,11 @@ export function DraftReview({ draft }: { draft: Draft }) {
 
       if (response.ok) {
         router.push("/onboarding/visual");
+        return;
       }
+
+      const data = (await response.json().catch(() => null)) as { error?: string } | null;
+      setError(data?.error ?? "草稿确认失败，请稍后重试。");
     });
   }
 
@@ -47,6 +54,8 @@ export function DraftReview({ draft }: { draft: Draft }) {
         <Metric label="互动温度" value={draft.interactionTemperature} />
         <Metric label="置信度" value={`${Math.round(draft.confidence * 100)}%`} />
       </div>
+
+      {error ? <p className="rounded-2xl bg-blush-50 p-3 text-sm font-bold text-blush-700">{error}</p> : null}
 
       <button
         className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-ink-900 px-6 text-base font-bold text-white shadow-lg shadow-blush-200 transition hover:-translate-y-0.5 hover:bg-blush-700 disabled:opacity-60"

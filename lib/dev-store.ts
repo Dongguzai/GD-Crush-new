@@ -48,7 +48,7 @@ type DevAuditEvent = {
   createdAt: string;
 };
 
-type DevMaterial = {
+export type DevMaterial = {
   id: string;
   crushId: string;
   materialType: string;
@@ -73,7 +73,7 @@ type DevProfileDraft = {
   confirmedAt?: string | null;
 };
 
-type DevVisualAsset = {
+export type DevVisualAsset = {
   id: string;
   crushId: string;
   assetType: string;
@@ -380,7 +380,16 @@ export async function getDevMaterials(crushId: string) {
   return data.onboardingMaterials.filter((material) => material.crushId === crushId);
 }
 
-export async function createDevProfileDraft(crushId: string) {
+export async function createDevProfileDraft(
+  crushId: string,
+  aiAnalysis?: {
+    personalityTraits?: string[];
+    communicationStyle?: string;
+    likes?: string[];
+    dislikes?: string[];
+    emotionalTone?: string;
+  }
+) {
   const data = await readStore();
   const profile = data.crushProfiles.find((item) => item.id === crushId);
   const materials = data.onboardingMaterials.filter((item) => item.crushId === crushId);
@@ -390,29 +399,72 @@ export async function createDevProfileDraft(crushId: string) {
     profile?.personalitySummary ? { label: "最近互动", value: profile.personalitySummary } : null,
     materialText ? { label: "用户补充材料", value: materialText.slice(0, 120) } : null,
   ].filter(Boolean);
-  const inferred = [
-    {
+
+  const inferred: { label: string; value: string; confidence: number }[] = [];
+
+  if (aiAnalysis?.personalityTraits?.length) {
+    inferred.push({
+      label: "性格特征",
+      value: aiAnalysis.personalityTraits.join("；"),
+      confidence: 0.75,
+    });
+  }
+  if (aiAnalysis?.communicationStyle) {
+    inferred.push({
+      label: "沟通风格",
+      value: aiAnalysis.communicationStyle,
+      confidence: 0.72,
+    });
+  }
+  if (aiAnalysis?.likes?.length) {
+    inferred.push({
+      label: "喜好",
+      value: aiAnalysis.likes.join("；"),
+      confidence: 0.68,
+    });
+  }
+  if (aiAnalysis?.dislikes?.length) {
+    inferred.push({
+      label: "雷区",
+      value: aiAnalysis.dislikes.join("；"),
+      confidence: 0.70,
+    });
+  }
+  if (!inferred.length) {
+    inferred.push({
       label: "沟通节奏",
       value: materialText.includes("忙") ? "可能需要低频、轻量推进" : "适合先用轻松话题建立舒适度",
       confidence: 0.62,
-    },
-  ];
-  const boundaries = [
-    {
+    });
+  }
+
+  const boundaries: { label: string; value: string; confidence: number }[] = [];
+  if (aiAnalysis?.dislikes?.length) {
+    for (const dislike of aiAnalysis.dislikes.slice(0, 2)) {
+      boundaries.push({
+        label: "避免",
+        value: `不宜主动提 ${dislike}`,
+        confidence: 0.65,
+      });
+    }
+  }
+  if (!boundaries.length) {
+    boundaries.push({
       label: "避免连续追问",
       value: "在对方回复不明确时，先给空间，不追加压力。",
       confidence: 0.7,
-    },
-  ];
+    });
+  }
+
   const draft: DevProfileDraft = {
     id: crypto.randomUUID(),
     crushId,
-    factsJson: facts as unknown[],
+    factsJson: facts,
     inferredTraitsJson: inferred,
     boundariesJson: boundaries,
     recommendedStage: profile?.realRelationshipStage ?? "普通朋友",
-    interactionTemperature: "neutral_warm",
-    confidence: 0.66,
+    interactionTemperature: aiAnalysis?.emotionalTone?.includes("暖") ? "warm" : "neutral",
+    confidence: aiAnalysis ? 0.78 : 0.66,
     status: "pending",
     createdAt: now(),
     confirmedAt: null,
@@ -516,41 +568,59 @@ export async function getDevTraits(crushId: string) {
 
 export async function addDevVisualAssets(
   crushId: string,
-  input: { theme: string; visualTags: Record<string, unknown> },
+  input: {
+    theme: string;
+    visualTags: Record<string, unknown>;
+    referenceImageKey?: string;
+  },
+  generatedAssets?: Array<{
+    assetType: string;
+    expression?: string | null;
+    storageUrl: string;
+    promptSnapshot?: string | null;
+  }>,
 ) {
   const data = await readStore();
   const createdAt = now();
   const base = `/api/mock-character?theme=${encodeURIComponent(input.theme)}&crush=${encodeURIComponent(crushId)}`;
-  const assets: DevVisualAsset[] = [
-    { assetType: "avatar", expression: null, storageUrl: `${base}&asset=avatar` },
-    { assetType: "portrait", expression: null, storageUrl: `${base}&asset=portrait` },
-    { assetType: "expression", expression: "neutral", storageUrl: `${base}&asset=neutral` },
-    { assetType: "expression", expression: "happy", storageUrl: `${base}&asset=happy` },
-    { assetType: "expression", expression: "shy", storageUrl: `${base}&asset=shy` },
-  ].map((asset) => ({
+  const assetInputs =
+    generatedAssets ??
+    [
+      { assetType: "avatar", expression: null, storageUrl: `${base}&asset=avatar` },
+      { assetType: "portrait", expression: null, storageUrl: `${base}&asset=portrait` },
+      { assetType: "expression", expression: "neutral", storageUrl: `${base}&asset=neutral` },
+      { assetType: "expression", expression: "happy", storageUrl: `${base}&asset=happy` },
+      { assetType: "expression", expression: "shy", storageUrl: `${base}&asset=shy` },
+    ];
+  const assets: DevVisualAsset[] = assetInputs.map((asset) => ({
     id: crypto.randomUUID(),
     crushId,
     theme: input.theme,
     visualTagsJson: input.visualTags,
-    promptSnapshot: "MVP mock two-dimensional otome character asset",
+    promptSnapshot: asset.promptSnapshot ?? "MVP mock two-dimensional otome character asset",
     createdAt,
     ...asset,
   }));
 
   data.visualAssets.push(...assets);
   const material = data.onboardingMaterials.find(
-    (item) => item.crushId === crushId && item.materialType === "reference_image" && item.retentionStatus === "temporary",
+    (item) =>
+      item.crushId === crushId &&
+      item.materialType === "reference_image" &&
+      item.retentionStatus === "temporary" &&
+      input.referenceImageKey &&
+      item.storageUrl === input.referenceImageKey,
   );
   if (material) {
     material.retentionStatus = "deleted";
     material.deletedAt = createdAt;
+    data.auditEvents.push({
+      id: crypto.randomUUID(),
+      userId: data.crushProfiles.find((profile) => profile.id === crushId)?.userId ?? "unknown",
+      eventType: "image_deleted",
+      createdAt,
+    });
   }
-  data.auditEvents.push({
-    id: crypto.randomUUID(),
-    userId: data.crushProfiles.find((profile) => profile.id === crushId)?.userId ?? "unknown",
-    eventType: "image_deleted",
-    createdAt,
-  });
   await writeStore(data);
   return assets;
 }
@@ -558,6 +628,11 @@ export async function addDevVisualAssets(
 export async function getDevVisualAssets(crushId: string) {
   const data = await readStore();
   return data.visualAssets.filter((asset) => asset.crushId === crushId);
+}
+
+export async function getDevMaterialsForCrush(crushId: string) {
+  const data = await readStore();
+  return data.onboardingMaterials.filter((material) => material.crushId === crushId);
 }
 
 export async function getOrCreateDevSession(crushId: string, sessionType: string, title?: string) {
@@ -589,6 +664,14 @@ export async function getOrCreateDevSession(crushId: string, sessionType: string
 export async function getDevMessages(sessionId: string) {
   const data = await readStore();
   return data.messages.filter((message) => message.sessionId === sessionId);
+}
+
+export async function getDevMessagesForCrush(crushId: string) {
+  const data = await readStore();
+  const sessionIds = new Set(
+    data.chatSessions.filter((session) => session.crushId === crushId).map((session) => session.id),
+  );
+  return data.messages.filter((message) => sessionIds.has(message.sessionId));
 }
 
 export async function addDevMessage(input: {
@@ -696,29 +779,43 @@ export async function getOrCreateDevVoiceProfile(crushId: string, theme = "sunny
   return voice;
 }
 
-export async function createDevQuickPractice(input: {
-  crushId: string;
-  scenarioType: string;
-  sendContext: string;
-  userLine: string;
-}) {
+export async function createDevQuickPractice(
+  input: {
+    crushId: string;
+    scenarioType: string;
+    sendContext: string;
+    userLine: string;
+  },
+  aiAnalysis?: {
+    riskLevel: string;
+    possibleFeeling: string;
+    mainRisk: string;
+    suggestedLine: string;
+    recommendedTiming: string;
+    shouldSend: boolean;
+  }
+) {
   const data = await readStore();
-  const riskLevel =
-    input.userLine.includes("必须") || input.userLine.includes("为什么不回")
+
+  const riskLevel = aiAnalysis?.riskLevel
+    ?? (input.userLine.includes("必须") || input.userLine.includes("为什么不回")
       ? "high"
       : input.userLine.includes("单独") || input.userLine.includes("喜欢")
         ? "medium"
-        : "low";
+        : "low");
+
   const simulatedReply =
     riskLevel === "high"
       ? "我现在不太想聊这个，先这样吧。"
       : riskLevel === "medium"
         ? "啊这周可能有点忙，我看看吧。"
         : "听起来可以呀，到时候看看时间。";
-  const suggestedLine =
-    riskLevel === "high"
+
+  const suggestedLine = aiAnalysis?.suggestedLine
+    ?? (riskLevel === "high"
       ? "刚才我可能有点急了，你不用马上回复。等你方便的时候再说就好。"
-      : "你之前提到的那件事我也挺感兴趣。要是哪天你也想去，我们可以一起。";
+      : "你之前提到的那件事我也挺感兴趣。要是哪天你也想去，我们可以一起。");
+
   const run: DevPracticeRun = {
     id: crypto.randomUUID(),
     crushId: input.crushId,
@@ -730,9 +827,10 @@ export async function createDevQuickPractice(input: {
     simulatedReply,
     suggestedLine,
     coachAnalysisJson: {
-      possibleFeeling: riskLevel === "low" ? "压力较小，像自然延续话题。" : "对方可能感到推进略快或被施压。",
-      mainRisk: riskLevel === "low" ? "风险较低。" : "铺垫不足，表达压力偏高。",
-      advice: riskLevel === "high" ? "建议先降频，避免追问。" : "降低邀约压力，保留对方选择空间。",
+      possibleFeeling: aiAnalysis?.possibleFeeling ?? (riskLevel === "low" ? "压力较小，像自然延续话题。" : "对方可能感到推进略快或被施压。"),
+      mainRisk: aiAnalysis?.mainRisk ?? (riskLevel === "low" ? "风险较低。" : "铺垫不足，表达压力偏高。"),
+      advice: aiAnalysis?.recommendedTiming ?? (riskLevel === "high" ? "建议先降频，避免追问。" : "降低邀约压力，保留对方选择空间。"),
+      shouldSend: aiAnalysis?.shouldSend ?? (riskLevel !== "high"),
     },
     createdAt: now(),
   };

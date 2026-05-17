@@ -20,10 +20,12 @@ import {
   getDevActions,
   getDevMemories,
   getDevMessages,
+  getDevMessagesForCrush,
   getDevProfileDraft,
   getDevGrowthMetrics,
   getDevSuggestions,
   getDevMaterials,
+  getDevMaterialsForCrush,
   getDevTraits,
   getDevVisualAssets,
   getOrCreateDevSession,
@@ -34,8 +36,12 @@ import {
   updateDevAction,
   updateDevMessageAudio,
 } from "@/lib/dev-store";
-import { hasDatabaseUrl } from "@/lib/env";
+import { getServerEnv, hasDatabaseUrl } from "@/lib/env";
 import { auditEvents, crushProfiles, growthMetrics, users, userSettings } from "@/db/schema";
+import { getImageGenerationService, type GeneratedVisualAssetInput } from "@/lib/image-generation-service";
+import { getStorageService } from "@/lib/storage-service";
+import { getTtsService } from "@/lib/tts-service";
+import type { VisualTheme } from "@/lib/visual-prompts";
 
 export async function confirmCurrentUserAge() {
   const userId = await getCurrentUserId();
@@ -153,7 +159,56 @@ export async function analyzeCurrentCrushProfile() {
     throw new Error("No active Crush profile.");
   }
 
-  return createDevProfileDraft(active.id);
+  const materials = await getDevMaterials(active.id);
+  const materialList = materials
+    .map((m) => m.sanitizedText)
+    .filter(Boolean) as string[];
+
+  let analysisResult: {
+    profile: {
+      personalityTraits: string[];
+      likes: string[];
+      dislikes: string[];
+      communicationStyle: string;
+    };
+    textAnalysis: {
+      emotionalTone: string;
+      underlyingIntent: string;
+    };
+  } | null = null;
+
+  try {
+    const { getDeepSeekService } = await import("@/lib/ai-service");
+    const aiService = getDeepSeekService();
+
+    const inputMaterials = [
+      { relationshipOrigin: active.relationshipOrigin },
+      { personalitySummary: active.personalitySummary },
+      { userGoal: active.userGoal },
+      { userAnxiety: active.userAnxiety },
+    ];
+    for (const text of materialList) {
+      inputMaterials.push({ personalitySummary: text });
+    }
+
+    analysisResult = await aiService.analyzeProfile(inputMaterials, active.nickname);
+  } catch (error) {
+    console.warn("[AI] Profile analysis failed, falling back to mock", error);
+  }
+
+  const personalityTraits = analysisResult?.profile?.personalityTraits ?? [];
+  const communicationStyle = analysisResult?.profile?.communicationStyle ?? "";
+  const likes = analysisResult?.profile?.likes ?? [];
+  const dislikes = analysisResult?.profile?.dislikes ?? [];
+  const emotionalTone = analysisResult?.textAnalysis?.emotionalTone ?? "";
+
+  return createDevProfileDraft(active.id, {
+    personalityTraits,
+    communicationStyle,
+    likes,
+    dislikes,
+    emotionalTone,
+  });
 }
 
 export async function confirmCurrentDraft(
@@ -181,8 +236,9 @@ export async function getProfileDraftById(draftId: string) {
 }
 
 export async function generateCurrentCrushVisualAssets(input: {
-  theme: string;
+  theme: VisualTheme;
   visualTags: Record<string, unknown>;
+  referenceImageKey?: string;
 }) {
   const userId = await getCurrentUserId();
   const active = await getActiveDevCrush(userId);
@@ -191,7 +247,65 @@ export async function generateCurrentCrushVisualAssets(input: {
     throw new Error("No active Crush profile.");
   }
 
-  return addDevVisualAssets(active.id, input);
+  let generatedAssets: GeneratedVisualAssetInput[] | undefined;
+
+  if (getServerEnv().APIMART_API_KEY) {
+    generatedAssets = await getImageGenerationService().generateCharacterAssets({
+      crushId: active.id,
+      theme: input.theme,
+      visualTags: input.visualTags,
+      personalitySummary: active.personalitySummary,
+      referenceImageKey: input.referenceImageKey,
+    });
+  }
+
+  const assets = await addDevVisualAssets(active.id, input, generatedAssets);
+
+  if (input.referenceImageKey) {
+    await getStorageService().deleteObject(input.referenceImageKey).catch((error) => {
+      console.warn("[Storage] Failed to delete temporary reference image", error);
+    });
+  }
+
+  return assets;
+}
+
+export async function generateCurrentCrushSceneAsset(input: {
+  theme: VisualTheme;
+  visualTags?: Record<string, unknown>;
+  sceneDescription: string;
+}) {
+  const userId = await getCurrentUserId();
+  const active = await getActiveDevCrush(userId);
+
+  if (!active) {
+    throw new Error("No active Crush profile.");
+  }
+
+  const generatedAsset = getServerEnv().APIMART_API_KEY
+    ? await getImageGenerationService().generateSceneAsset({
+        crushId: active.id,
+        theme: input.theme,
+        visualTags: input.visualTags,
+        sceneDescription: input.sceneDescription,
+      })
+    : {
+        assetType: "scene" as const,
+        expression: null,
+        storageUrl: `/api/mock-character?theme=${encodeURIComponent(input.theme)}&crush=${encodeURIComponent(active.id)}&asset=scene`,
+        promptSnapshot: "MVP mock two-dimensional otome scene asset",
+      };
+
+  const [asset] = await addDevVisualAssets(
+    active.id,
+    {
+      theme: input.theme,
+      visualTags: input.visualTags ?? {},
+    },
+    [generatedAsset],
+  );
+
+  return asset;
 }
 
 export async function getCurrentCompanionChat() {
@@ -207,7 +321,14 @@ export async function getCurrentCompanionChat() {
   return { profile: active, session, messages };
 }
 
-export async function sendCurrentCompanionMessage(message: string) {
+export async function sendCurrentCompanionMessage(
+  message: string,
+  context?: {
+    crushNickname?: string;
+    relationshipStage?: string;
+    interactionTemperature?: string;
+  }
+) {
   const userId = await getCurrentUserId();
   const active = await getActiveDevCrush(userId);
 
@@ -217,7 +338,23 @@ export async function sendCurrentCompanionMessage(message: string) {
 
   const session = await getOrCreateDevSession(active.id, "companion", "甜蜜陪伴");
   const userMessage = await addDevMessage({ sessionId: session.id, role: "user", content: message });
-  const reply = buildMockCompanionReply(active.nickname, message);
+
+  let reply: string;
+  try {
+    const { getDeepSeekService } = await import("@/lib/ai-service");
+    const aiService = getDeepSeekService();
+    reply = await aiService.sendMessage(
+      [{ role: "user", content: message }],
+      {
+        crushNickname: context?.crushNickname ?? active.nickname,
+        relationshipStage: context?.relationshipStage ?? active.realRelationshipStage,
+        interactionTemperature: context?.interactionTemperature ?? active.interactionTemperature,
+      }
+    );
+  } catch {
+    reply = buildMockCompanionReply(active.nickname, message);
+  }
+
   const crushMessage = await addDevMessage({ sessionId: session.id, role: "crush", content: reply });
   return { session, userMessage, crushMessage };
 }
@@ -234,6 +371,28 @@ function buildMockCompanionReply(nickname: string, message: string) {
 
 export async function attachMockVoiceToMessage(messageId: string) {
   return updateDevMessageAudio(messageId, `/api/voice/mock?messageId=${encodeURIComponent(messageId)}`);
+}
+
+export async function attachVoiceToMessage(input: {
+  messageId: string;
+  text: string;
+  speaker?: string | null;
+}) {
+  const userId = await getCurrentUserId();
+  const active = await getActiveDevCrush(userId);
+
+  if (!active || !getServerEnv().TTS_API_KEY) {
+    const message = await attachMockVoiceToMessage(input.messageId);
+    return { message, provider: "mock-tts" as const };
+  }
+
+  const audio = await getTtsService().synthesize({
+    text: input.text,
+    category: `crush-${active.id}-voice`,
+    speaker: input.speaker,
+  });
+  const message = await updateDevMessageAudio(input.messageId, audio.url);
+  return { message, provider: "seed-tts-2.0" as const };
 }
 
 export async function getCurrentVoiceProfile() {
@@ -281,7 +440,36 @@ export async function runCurrentQuickPractice(input: {
   if (!active) {
     throw new Error("No active Crush profile.");
   }
-  return createDevQuickPractice({ crushId: active.id, ...input });
+
+  let aiResult: {
+    riskLevel: string;
+    possibleFeeling: string;
+    mainRisk: string;
+    suggestedLine: string;
+    recommendedTiming: string;
+    shouldSend: boolean;
+  } | null = null;
+
+  try {
+    const { getDeepSeekService } = await import("@/lib/ai-service");
+    const aiService = getDeepSeekService();
+    aiResult = await aiService.quickLineTest(
+      input.userLine,
+      input.scenarioType,
+      {
+        crushNickname: active.nickname,
+        relationshipStage: active.realRelationshipStage,
+        sendContext: input.sendContext,
+      }
+    );
+  } catch (error) {
+    console.warn("[AI] Quick practice analysis failed, falling back to mock", error);
+  }
+
+  return createDevQuickPractice(
+    { crushId: active.id, ...input },
+    aiResult ?? undefined
+  );
 }
 
 export async function startCurrentSimulation(input: { scenarioType: string; goal: string; background: string }) {
@@ -343,5 +531,35 @@ export async function destroyCurrentCrush(confirmText: string) {
   if (!active) {
     return null;
   }
+
+  const storage = getStorageService();
+  const [assets, materials, messages] = await Promise.all([
+    getDevVisualAssets(active.id),
+    getDevMaterialsForCrush(active.id),
+    getDevMessagesForCrush(active.id),
+  ]);
+
+  await Promise.all([
+    ...assets.map((asset) =>
+      storage.deletePublicAssetByUrl(asset.storageUrl).catch((error) => {
+        console.warn("[Storage] Failed to delete persisted visual asset", error);
+      }),
+    ),
+    ...materials
+      .filter((material) => material.materialType === "reference_image" && material.storageUrl)
+      .map((material) =>
+        storage.deleteObject(material.storageUrl as string).catch((error) => {
+          console.warn("[Storage] Failed to delete reference image", error);
+        }),
+      ),
+    ...messages
+      .filter((message) => message.audioUrl)
+      .map((message) =>
+        storage.deletePublicAssetByUrl(message.audioUrl as string).catch((error) => {
+          console.warn("[Storage] Failed to delete persisted voice asset", error);
+        }),
+      ),
+  ]);
+
   return destroyDevCrush(userId, active.id);
 }

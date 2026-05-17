@@ -7,20 +7,29 @@ const requestSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => null);
-  const parsed = requestSchema.safeParse(body);
+  try {
+    const body = await request.json().catch(() => null);
+    const parsed = requestSchema.safeParse(body);
 
-  if (!parsed.success) {
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "请先确认你已年满 18 岁并理解产品用途。" },
+        { status: 400 },
+      );
+    }
+
+    const user = await confirmCurrentUserAge();
+
+    return NextResponse.json({
+      ok: true,
+      ageConfirmedAt: user.ageConfirmedAt,
+    });
+  } catch (error) {
+    console.error("[onboarding/age-confirm] failed to confirm age", error);
+
     return NextResponse.json(
-      { error: "请先确认你已年满 18 岁并理解产品用途。" },
-      { status: 400 },
+      { error: "确认失败，请稍后重试。" },
+      { status: 500 },
     );
   }
-
-  const user = await confirmCurrentUserAge();
-
-  return NextResponse.json({
-    ok: true,
-    ageConfirmedAt: user.ageConfirmedAt,
-  });
 }

@@ -10,17 +10,82 @@ type Message = {
   audioUrl?: string | null;
 };
 
+type VoiceState = "idle" | "recording" | "processing";
+
+function mergeAudioChunks(chunks: Float32Array[]) {
+  const totalLength = chunks.reduce((length, chunk) => length + chunk.length, 0);
+  const merged = new Float32Array(totalLength);
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return merged;
+}
+
+function encodeWav(samples: Float32Array, sampleRate: number) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+
+  function writeString(offset: number, value: string) {
+    for (let index = 0; index < value.length; index++) {
+      view.setUint8(offset + index, value.charCodeAt(index));
+    }
+  }
+
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, "data");
+  view.setUint32(40, samples.length * 2, true);
+
+  let offset = 44;
+  for (const sample of samples) {
+    const clamped = Math.max(-1, Math.min(1, sample));
+    view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
+    offset += 2;
+  }
+
+  return new Blob([buffer], { type: "audio/wav" });
+}
+
 export function CompanionChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
   const [autoPlay, setAutoPlay] = useState(true);
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [voiceMessage, setVoiceMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const latestAudioRef = useRef<HTMLAudioElement | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const audioChunksRef = useRef<Float32Array[]>([]);
 
   useEffect(() => {
     fetch("/api/chat/companion")
       .then((response) => response.json() as Promise<{ messages: Message[] }>)
       .then((data) => setMessages(data.messages ?? []));
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      processorRef.current?.disconnect();
+      audioSourceRef.current?.disconnect();
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      audioContextRef.current?.close().catch(() => undefined);
+    };
   }, []);
 
   function send(message: string, inputMode: "text" | "voice" = "text") {
@@ -53,12 +118,119 @@ export function CompanionChat() {
     });
   }
 
-  function mockVoiceInput() {
-    startTransition(async () => {
-      const response = await fetch("/api/voice/stt", { method: "POST" });
-      const data = (await response.json()) as { text: string };
-      send(data.text, "voice");
-    });
+  async function startRecording() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setVoiceMessage("当前浏览器不支持录音，请直接输入文字。");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioContext = new AudioContext();
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+      audioChunksRef.current = [];
+      processor.onaudioprocess = (event) => {
+        const channel = event.inputBuffer.getChannelData(0);
+        audioChunksRef.current.push(new Float32Array(channel));
+      };
+
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+
+      mediaStreamRef.current = stream;
+      audioContextRef.current = audioContext;
+      audioSourceRef.current = source;
+      processorRef.current = processor;
+      setVoiceMessage("录音中，再点一次结束。");
+      setVoiceState("recording");
+    } catch {
+      setVoiceMessage("无法访问麦克风，请检查浏览器权限。");
+    }
+  }
+
+  async function stopRecording() {
+    const audioContext = audioContextRef.current;
+    const samples = mergeAudioChunks(audioChunksRef.current);
+
+    processorRef.current?.disconnect();
+    audioSourceRef.current?.disconnect();
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+
+    processorRef.current = null;
+    audioSourceRef.current = null;
+    mediaStreamRef.current = null;
+    audioChunksRef.current = [];
+
+    if (audioContext) {
+      await audioContext.close().catch(() => undefined);
+    }
+    audioContextRef.current = null;
+
+    if (!audioContext || samples.length === 0) {
+      setVoiceState("idle");
+      setVoiceMessage("录音为空，请重试。");
+      return;
+    }
+
+    setVoiceState("processing");
+    setVoiceMessage("正在把语音转成文字...");
+
+    try {
+      const audioBlob = encodeWav(samples, audioContext.sampleRate);
+      const formData = new FormData();
+      formData.append("file", audioBlob, "voice-input.wav");
+
+      const uploadResponse = await fetch("/api/uploads/voice-input", {
+        method: "POST",
+        body: formData,
+      });
+      const uploadData = (await uploadResponse.json()) as {
+        temporaryObjectKey?: string;
+        message?: string;
+      };
+
+      if (!uploadResponse.ok || !uploadData.temporaryObjectKey) {
+        throw new Error(uploadData.message ?? "录音上传失败。");
+      }
+
+      const sttResponse = await fetch("/api/voice/stt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audioObjectKey: uploadData.temporaryObjectKey }),
+      });
+      const sttData = (await sttResponse.json()) as {
+        text?: string;
+        message?: string;
+      };
+
+      if (!sttResponse.ok || !sttData.text) {
+        throw new Error(sttData.message ?? "语音转文字失败。");
+      }
+
+      const transcript = sttData.text;
+      setText((current) => {
+        const trimmedCurrent = current.trim();
+        return trimmedCurrent ? `${trimmedCurrent} ${transcript}` : transcript;
+      });
+      setVoiceMessage("已转成文字，可修改后发送。");
+    } catch (error) {
+      setVoiceMessage(error instanceof Error ? error.message : "语音转文字失败，请重试。");
+    } finally {
+      setVoiceState("idle");
+    }
+  }
+
+  function handleVoiceInput() {
+    if (voiceState === "recording") {
+      void stopRecording();
+      return;
+    }
+
+    if (voiceState === "idle") {
+      void startRecording();
+    }
   }
 
   function favorite(message: Message) {
@@ -142,18 +314,22 @@ export function CompanionChat() {
             ))
           ) : (
             <div className="rounded-3xl bg-blush-50/70 p-5 text-sm leading-7 text-ink-700">
-              还没有聊天。试着说一句「今天有点想你」，系统会用 mock TTS 生成语音回复。
+              还没有聊天。试着说一句「今天有点想你」，系统会为 Crush 生成语音回复。
             </div>
           )}
         </div>
 
         <div className="flex gap-2 border-t border-blush-100 pt-3">
           <button
-            className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-mint-100 text-mint-500"
-            disabled={isPending}
+            className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full transition ${
+              voiceState === "recording"
+                ? "animate-pulse bg-blush-500 text-white"
+                : "bg-mint-100 text-mint-500"
+            }`}
+            disabled={isPending || voiceState === "processing"}
             type="button"
-            onClick={mockVoiceInput}
-            aria-label="语音输入"
+            onClick={handleVoiceInput}
+            aria-label={voiceState === "recording" ? "停止录音" : "语音输入"}
           >
             <Mic aria-hidden="true" size={20} />
           </button>
@@ -170,7 +346,7 @@ export function CompanionChat() {
           />
           <button
             className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink-900 text-white disabled:opacity-50"
-            disabled={isPending}
+            disabled={isPending || voiceState !== "idle"}
             type="button"
             onClick={() => send(text)}
             aria-label="发送"
@@ -178,6 +354,7 @@ export function CompanionChat() {
             <Send aria-hidden="true" size={20} />
           </button>
         </div>
+        {voiceMessage ? <p className="px-2 text-xs font-bold text-ink-600">{voiceMessage}</p> : null}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ImageUp, WandSparkles } from "lucide-react";
 
@@ -14,46 +14,80 @@ export function VisualGenerator() {
   const router = useRouter();
   const [theme, setTheme] = useState("sunny_campus");
   const [useReference, setUseReference] = useState(false);
+  const [referenceFile, setReferenceFile] = useState<File | null>(null);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   function generate() {
     startTransition(async () => {
-      setStatus("正在准备参考图隐私流程...");
-      let visualTags = {
-        hairStyle: "柔和短发",
-        hairColor: "深棕",
-        outfitMood: "清爽、干净",
-        overallVibe: "温柔但不黏人",
-      };
+      try {
+        setStatus("正在准备视觉标签...");
+        let visualTags = {
+          hairStyle: "柔和短发",
+          hairColor: "深棕",
+          outfitMood: "清爽、干净",
+          overallVibe: "温柔但不黏人",
+        };
+        let referenceImageKey: string | undefined;
 
-      if (useReference) {
-        const presign = await fetch("/api/uploads/reference-image/presign", {
+        if (useReference) {
+          if (!referenceFile) {
+            setStatus("请先选择一张参考图。");
+            return;
+          }
+
+          setStatus("正在上传参考图...");
+          const formData = new FormData();
+          formData.append("file", referenceFile);
+          const uploadResponse = await fetch("/api/uploads/reference-image", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!uploadResponse.ok) {
+            const body = (await uploadResponse.json().catch(() => null)) as { message?: string } | null;
+            setStatus(body?.message ?? "参考图上传失败，请稍后重试。");
+            return;
+          }
+
+          const uploaded = (await uploadResponse.json()) as { temporaryObjectKey: string };
+          referenceImageKey = uploaded.temporaryObjectKey;
+
+          setStatus("正在提取非身份化视觉标签...");
+          const extractResponse = await fetch("/api/visual/extract-tags", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ temporaryObjectKey: uploaded.temporaryObjectKey }),
+          });
+
+          if (!extractResponse.ok) {
+            const body = (await extractResponse.json().catch(() => null)) as { message?: string } | null;
+            setStatus(body?.message ?? "视觉标签提取失败，请稍后重试。");
+            return;
+          }
+
+          const extracted = (await extractResponse.json()) as { visualTags: typeof visualTags };
+          visualTags = extracted.visualTags;
+        }
+
+        setStatus("正在生成二次元角色资产，并持久化保存...");
+        const response = await fetch("/api/visual/generate-character", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ contentType: "image/png" }),
-        }).then((response) => response.json() as Promise<{ temporaryObjectKey: string }>);
-        setStatus("正在提取非身份化视觉标签...");
-        const extracted = await fetch("/api/visual/extract-tags", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ temporaryObjectKey: presign.temporaryObjectKey }),
-        }).then((response) => response.json() as Promise<{ visualTags: typeof visualTags }>);
-        visualTags = extracted.visualTags;
-      }
+          body: JSON.stringify({ theme, visualTags, referenceImageKey }),
+        });
 
-      setStatus("正在生成二次元角色资产，并删除原始参考图...");
-      const response = await fetch("/api/visual/generate-character", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ theme, visualTags }),
-      });
+        if (response.ok) {
+          router.push("/app");
+          router.refresh();
+          return;
+        }
 
-      if (response.ok) {
-        router.push("/app");
-        router.refresh();
-      } else {
-        setStatus("生成失败，请稍后重试。");
+        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        setStatus(body?.message ?? "生成失败，请稍后重试。");
+      } catch {
+        setStatus("生成失败，请检查网络后重试。");
       }
     });
   }
@@ -88,11 +122,35 @@ export function VisualGenerator() {
         <span>
           <span className="mb-1 flex items-center gap-2 font-extrabold text-ink-900">
             <ImageUp aria-hidden="true" size={16} />
-            使用图片参考 MVP mock 流程
+            使用图片参考
           </span>
           原图只用于本次生成。生成完成后默认删除，只保留二次元角色和你确认的视觉标签。
         </span>
       </label>
+
+      {useReference ? (
+        <div className="grid gap-3 rounded-3xl border border-blush-100 bg-white p-4 text-sm text-ink-700">
+          <input
+            ref={fileInputRef}
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            type="file"
+            onChange={(event) => setReferenceFile(event.target.files?.[0] ?? null)}
+          />
+          <button
+            className="inline-flex min-h-11 items-center justify-center rounded-full border border-ink-900/10 bg-white px-4 font-bold text-ink-900 transition hover:bg-blush-50"
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {referenceFile ? "重新选择参考图" : "选择参考图"}
+          </button>
+          <p className="text-sm leading-6">
+            {referenceFile
+              ? `已选择：${referenceFile.name}`
+              : "支持 JPEG、PNG、WebP，最大 10MB。"}
+          </p>
+        </div>
+      ) : null}
 
       {status ? <p className="rounded-2xl bg-blush-50 p-3 text-sm font-bold text-blush-700">{status}</p> : null}
 

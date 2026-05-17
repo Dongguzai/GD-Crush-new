@@ -28,6 +28,7 @@ export function SettingsPanel() {
         </h1>
         <div className="mt-6 grid gap-3 text-sm leading-7 text-ink-700">
           <p className="rounded-3xl bg-mint-100/55 p-4">图片参考默认生成后删除原图，只保留二次元角色资产和视觉标签。</p>
+          <p className="rounded-3xl bg-mint-100/55 p-4">语音输入只用于即时转写，临时录音会在识别结束后删除，不作为长期素材保留。</p>
           <p className="rounded-3xl bg-mint-100/55 p-4">语音使用产品内合成声线，不做真实人物声音克隆。</p>
           <p className="rounded-3xl bg-mint-100/55 p-4">聊天文本只提取摘要标签，推测必须由用户确认后才入档。</p>
         </div>
