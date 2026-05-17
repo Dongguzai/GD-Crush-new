@@ -1,0 +1,985 @@
+import "server-only";
+
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+
+export type DevUser = {
+  id: string;
+  email?: string | null;
+  ageConfirmedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DevCrushProfile = {
+  id: string;
+  userId: string;
+  nickname: string;
+  relationshipOrigin?: string | null;
+  realRelationshipStage: string;
+  interactionTemperature: string;
+  riskLevel: string;
+  userGoal?: string | null;
+  userAnxiety?: string | null;
+  personalitySummary?: string | null;
+  communicationStyle?: string | null;
+  aiConfidence?: string | null;
+  status: "active" | "archived" | "destroyed";
+  createdAt: string;
+  updatedAt: string;
+};
+
+type DevGrowthMetrics = {
+  crushId: string;
+  virtualIntimacy: number;
+  communicationConfidence: number;
+  relationshipUnderstanding: number;
+  emotionalStability: number;
+  realActionCount: number;
+  memoryFragments: number;
+  updatedAt: string;
+};
+
+type DevAuditEvent = {
+  id: string;
+  userId: string;
+  eventType: string;
+  metadataJson?: unknown;
+  createdAt: string;
+};
+
+type DevMaterial = {
+  id: string;
+  crushId: string;
+  materialType: string;
+  sanitizedText?: string | null;
+  storageUrl?: string | null;
+  retentionStatus: string;
+  createdAt: string;
+  deletedAt?: string | null;
+};
+
+type DevProfileDraft = {
+  id: string;
+  crushId: string;
+  factsJson: unknown[];
+  inferredTraitsJson: unknown[];
+  boundariesJson: unknown[];
+  recommendedStage: string;
+  interactionTemperature: string;
+  confidence: number;
+  status: "pending" | "confirmed" | "rejected";
+  createdAt: string;
+  confirmedAt?: string | null;
+};
+
+type DevVisualAsset = {
+  id: string;
+  crushId: string;
+  assetType: string;
+  expression?: string | null;
+  theme: string;
+  visualTagsJson: Record<string, unknown>;
+  storageUrl: string;
+  promptSnapshot?: string | null;
+  createdAt: string;
+};
+
+type DevVoiceProfile = {
+  id: string;
+  crushId: string;
+  voiceStyle: string;
+  speed: string;
+  emotionLevel: string;
+  ageStyle: string;
+  providerVoiceId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type DevChatSession = {
+  id: string;
+  crushId: string;
+  sessionType: string;
+  title?: string | null;
+  scenarioType?: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type DevMessage = {
+  id: string;
+  sessionId: string;
+  role: "user" | "crush" | "coach" | "system";
+  content: string;
+  audioUrl?: string | null;
+  metadataJson?: unknown;
+  createdAt: string;
+};
+
+type DevPracticeRun = {
+  id: string;
+  crushId: string;
+  sessionId?: string | null;
+  practiceType: string;
+  scenarioType: string;
+  sendContext?: string | null;
+  userLine?: string | null;
+  riskLevel: string;
+  simulatedReply?: string | null;
+  coachAnalysisJson: Record<string, unknown>;
+  suggestedLine?: string | null;
+  createdAt: string;
+};
+
+type DevRealAction = {
+  id: string;
+  crushId: string;
+  practiceRunId?: string | null;
+  title: string;
+  suggestedMessage?: string | null;
+  status: string;
+  feedbackText?: string | null;
+  executedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type DevProfileUpdateSuggestion = {
+  id: string;
+  crushId: string;
+  sourceType: string;
+  sourceId?: string | null;
+  suggestionJson: Record<string, unknown>;
+  confidence: number;
+  status: "pending" | "accepted" | "rejected";
+  createdAt: string;
+  resolvedAt?: string | null;
+};
+
+type DevMemory = {
+  id: string;
+  crushId: string;
+  sourceType: string;
+  sourceId?: string | null;
+  title: string;
+  excerpt?: string | null;
+  imageUrl?: string | null;
+  rewardJson?: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+type DevStoreData = {
+  users: DevUser[];
+  crushProfiles: DevCrushProfile[];
+  crushTraits: {
+    id: string;
+    crushId: string;
+    traitType: string;
+    label: string;
+    description?: string | null;
+    source: string;
+    confidence?: number | null;
+    confirmed: boolean;
+    createdAt: string;
+  }[];
+  growthMetrics: DevGrowthMetrics[];
+  auditEvents: DevAuditEvent[];
+  onboardingMaterials: DevMaterial[];
+  aiProfileDrafts: DevProfileDraft[];
+  visualAssets: DevVisualAsset[];
+  voiceProfiles: DevVoiceProfile[];
+  chatSessions: DevChatSession[];
+  messages: DevMessage[];
+  practiceRuns: DevPracticeRun[];
+  realActions: DevRealAction[];
+  profileUpdateSuggestions: DevProfileUpdateSuggestion[];
+  memories: DevMemory[];
+};
+
+const storePath = join(process.cwd(), ".data", "dev-store.json");
+
+const emptyStore = (): DevStoreData => ({
+  users: [],
+  crushProfiles: [],
+  crushTraits: [],
+  growthMetrics: [],
+  auditEvents: [],
+  onboardingMaterials: [],
+  aiProfileDrafts: [],
+  visualAssets: [],
+  voiceProfiles: [],
+  chatSessions: [],
+  messages: [],
+  practiceRuns: [],
+  realActions: [],
+  profileUpdateSuggestions: [],
+  memories: [],
+});
+
+async function readStore(): Promise<DevStoreData> {
+  try {
+    const raw = await readFile(storePath, "utf8");
+    return { ...emptyStore(), ...(JSON.parse(raw) as Partial<DevStoreData>) };
+  } catch {
+    return emptyStore();
+  }
+}
+
+async function writeStore(data: DevStoreData) {
+  await mkdir(dirname(storePath), { recursive: true });
+  await writeFile(storePath, JSON.stringify(data, null, 2));
+}
+
+function now() {
+  return new Date().toISOString();
+}
+
+export async function ensureDevUser(userId: string): Promise<DevUser> {
+  const data = await readStore();
+  const existing = data.users.find((user) => user.id === userId);
+
+  if (existing) {
+    return existing;
+  }
+
+  const createdAt = now();
+  const user: DevUser = {
+    id: userId,
+    email: null,
+    ageConfirmedAt: null,
+    createdAt,
+    updatedAt: createdAt,
+  };
+
+  data.users.push(user);
+  await writeStore(data);
+  return user;
+}
+
+export async function confirmDevUserAge(userId: string) {
+  const data = await readStore();
+  const createdAt = now();
+  let user = data.users.find((item) => item.id === userId);
+
+  if (!user) {
+    user = {
+      id: userId,
+      email: null,
+      ageConfirmedAt: null,
+      createdAt,
+      updatedAt: createdAt,
+    };
+    data.users.push(user);
+  }
+
+  user.ageConfirmedAt = createdAt;
+  user.updatedAt = createdAt;
+  data.auditEvents.push({
+    id: crypto.randomUUID(),
+    userId,
+    eventType: "age_confirmed",
+    createdAt,
+  });
+
+  await writeStore(data);
+  return user;
+}
+
+export async function createDevCrush(
+  userId: string,
+  input: {
+    nickname: string;
+    relationshipOrigin?: string | null;
+    currentStageGuess?: string | null;
+    lastInteraction?: string | null;
+    userGoal?: string | null;
+    userAnxiety?: string | null;
+  },
+) {
+  const data = await readStore();
+  const existing = data.crushProfiles.find(
+    (profile) => profile.userId === userId && profile.status === "active",
+  );
+
+  if (existing) {
+    return existing;
+  }
+
+  const createdAt = now();
+  const profile: DevCrushProfile = {
+    id: crypto.randomUUID(),
+    userId,
+    nickname: input.nickname,
+    relationshipOrigin: input.relationshipOrigin ?? null,
+    realRelationshipStage: input.currentStageGuess ?? "普通朋友",
+    interactionTemperature: "neutral",
+    riskLevel: "low",
+    userGoal: input.userGoal ?? null,
+    userAnxiety: input.userAnxiety ?? null,
+    personalitySummary: input.lastInteraction ? `最近互动：${input.lastInteraction}` : null,
+    communicationStyle: null,
+    aiConfidence: null,
+    status: "active",
+    createdAt,
+    updatedAt: createdAt,
+  };
+
+  data.crushProfiles.push(profile);
+  data.growthMetrics.push({
+    crushId: profile.id,
+    virtualIntimacy: 0,
+    communicationConfidence: 35,
+    relationshipUnderstanding: 20,
+    emotionalStability: 40,
+    realActionCount: 0,
+    memoryFragments: 0,
+    updatedAt: createdAt,
+  });
+
+  await writeStore(data);
+  return profile;
+}
+
+export async function getActiveDevCrush(userId: string) {
+  const data = await readStore();
+  return (
+    data.crushProfiles.find((profile) => profile.userId === userId && profile.status === "active") ??
+    null
+  );
+}
+
+export async function getDevGrowthMetrics(crushId: string) {
+  const data = await readStore();
+  return data.growthMetrics.find((metrics) => metrics.crushId === crushId) ?? null;
+}
+
+export async function addDevMaterial(
+  crushId: string,
+  input: { materialType: string; sanitizedText?: string | null; storageUrl?: string | null },
+) {
+  const data = await readStore();
+  const material: DevMaterial = {
+    id: crypto.randomUUID(),
+    crushId,
+    materialType: input.materialType,
+    sanitizedText: input.sanitizedText ?? null,
+    storageUrl: input.storageUrl ?? null,
+    retentionStatus: input.materialType === "reference_image" ? "temporary" : "retained_summary",
+    createdAt: now(),
+    deletedAt: null,
+  };
+  data.onboardingMaterials.push(material);
+  await writeStore(data);
+  return material;
+}
+
+export async function getDevMaterials(crushId: string) {
+  const data = await readStore();
+  return data.onboardingMaterials.filter((material) => material.crushId === crushId);
+}
+
+export async function createDevProfileDraft(crushId: string) {
+  const data = await readStore();
+  const profile = data.crushProfiles.find((item) => item.id === crushId);
+  const materials = data.onboardingMaterials.filter((item) => item.crushId === crushId);
+  const materialText = materials.map((item) => item.sanitizedText).filter(Boolean).join("\n");
+  const facts = [
+    profile?.relationshipOrigin ? { label: "认识方式", value: profile.relationshipOrigin } : null,
+    profile?.personalitySummary ? { label: "最近互动", value: profile.personalitySummary } : null,
+    materialText ? { label: "用户补充材料", value: materialText.slice(0, 120) } : null,
+  ].filter(Boolean);
+  const inferred = [
+    {
+      label: "沟通节奏",
+      value: materialText.includes("忙") ? "可能需要低频、轻量推进" : "适合先用轻松话题建立舒适度",
+      confidence: 0.62,
+    },
+  ];
+  const boundaries = [
+    {
+      label: "避免连续追问",
+      value: "在对方回复不明确时，先给空间，不追加压力。",
+      confidence: 0.7,
+    },
+  ];
+  const draft: DevProfileDraft = {
+    id: crypto.randomUUID(),
+    crushId,
+    factsJson: facts as unknown[],
+    inferredTraitsJson: inferred,
+    boundariesJson: boundaries,
+    recommendedStage: profile?.realRelationshipStage ?? "普通朋友",
+    interactionTemperature: "neutral_warm",
+    confidence: 0.66,
+    status: "pending",
+    createdAt: now(),
+    confirmedAt: null,
+  };
+  data.aiProfileDrafts.push(draft);
+  await writeStore(data);
+  return draft;
+}
+
+export async function getDevProfileDraft(draftId: string) {
+  const data = await readStore();
+  return data.aiProfileDrafts.find((draft) => draft.id === draftId) ?? null;
+}
+
+export async function confirmDevProfileDraft(
+  draftId: string,
+  input: {
+    acceptedFacts?: { label: string; value?: string }[];
+    acceptedTraits?: { label: string; value?: string; confidence?: number }[];
+    realRelationshipStage?: string;
+    interactionTemperature?: string;
+  },
+) {
+  const data = await readStore();
+  const draft = data.aiProfileDrafts.find((item) => item.id === draftId);
+
+  if (!draft) {
+    return null;
+  }
+
+  const profile = data.crushProfiles.find((item) => item.id === draft.crushId);
+  const updatedAt = now();
+  draft.status = "confirmed";
+  draft.confirmedAt = updatedAt;
+
+  if (profile) {
+    profile.realRelationshipStage = input.realRelationshipStage ?? draft.recommendedStage;
+    profile.interactionTemperature = input.interactionTemperature ?? draft.interactionTemperature;
+    profile.aiConfidence = String(draft.confidence);
+    profile.updatedAt = updatedAt;
+  }
+
+  const facts = input.acceptedFacts ?? (draft.factsJson as { label: string; value?: string }[]);
+  const traits = input.acceptedTraits ?? (draft.inferredTraitsJson as { label: string; value?: string; confidence?: number }[]);
+  const boundaries = draft.boundariesJson as { label: string; value?: string; confidence?: number }[];
+
+  for (const fact of facts) {
+    data.crushTraits.push({
+      id: crypto.randomUUID(),
+      crushId: draft.crushId,
+      traitType: "fact",
+      label: fact.label,
+      description: fact.value ?? null,
+      source: "ai",
+      confidence: 1,
+      confirmed: true,
+      createdAt: updatedAt,
+    });
+  }
+  for (const trait of traits) {
+    data.crushTraits.push({
+      id: crypto.randomUUID(),
+      crushId: draft.crushId,
+      traitType: "style",
+      label: trait.label,
+      description: trait.value ?? null,
+      source: "ai",
+      confidence: trait.confidence ?? draft.confidence,
+      confirmed: true,
+      createdAt: updatedAt,
+    });
+  }
+  for (const boundary of boundaries) {
+    data.crushTraits.push({
+      id: crypto.randomUUID(),
+      crushId: draft.crushId,
+      traitType: "boundary",
+      label: boundary.label,
+      description: boundary.value ?? null,
+      source: "ai",
+      confidence: boundary.confidence ?? draft.confidence,
+      confirmed: true,
+      createdAt: updatedAt,
+    });
+  }
+
+  const metrics = data.growthMetrics.find((item) => item.crushId === draft.crushId);
+  if (metrics) {
+    metrics.relationshipUnderstanding = Math.min(100, metrics.relationshipUnderstanding + 12);
+    metrics.updatedAt = updatedAt;
+  }
+
+  await writeStore(data);
+  return { draft, profile };
+}
+
+export async function getDevTraits(crushId: string) {
+  const data = await readStore();
+  return data.crushTraits.filter((trait) => trait.crushId === crushId);
+}
+
+export async function addDevVisualAssets(
+  crushId: string,
+  input: { theme: string; visualTags: Record<string, unknown> },
+) {
+  const data = await readStore();
+  const createdAt = now();
+  const base = `/api/mock-character?theme=${encodeURIComponent(input.theme)}&crush=${encodeURIComponent(crushId)}`;
+  const assets: DevVisualAsset[] = [
+    { assetType: "avatar", expression: null, storageUrl: `${base}&asset=avatar` },
+    { assetType: "portrait", expression: null, storageUrl: `${base}&asset=portrait` },
+    { assetType: "expression", expression: "neutral", storageUrl: `${base}&asset=neutral` },
+    { assetType: "expression", expression: "happy", storageUrl: `${base}&asset=happy` },
+    { assetType: "expression", expression: "shy", storageUrl: `${base}&asset=shy` },
+  ].map((asset) => ({
+    id: crypto.randomUUID(),
+    crushId,
+    theme: input.theme,
+    visualTagsJson: input.visualTags,
+    promptSnapshot: "MVP mock two-dimensional otome character asset",
+    createdAt,
+    ...asset,
+  }));
+
+  data.visualAssets.push(...assets);
+  const material = data.onboardingMaterials.find(
+    (item) => item.crushId === crushId && item.materialType === "reference_image" && item.retentionStatus === "temporary",
+  );
+  if (material) {
+    material.retentionStatus = "deleted";
+    material.deletedAt = createdAt;
+  }
+  data.auditEvents.push({
+    id: crypto.randomUUID(),
+    userId: data.crushProfiles.find((profile) => profile.id === crushId)?.userId ?? "unknown",
+    eventType: "image_deleted",
+    createdAt,
+  });
+  await writeStore(data);
+  return assets;
+}
+
+export async function getDevVisualAssets(crushId: string) {
+  const data = await readStore();
+  return data.visualAssets.filter((asset) => asset.crushId === crushId);
+}
+
+export async function getOrCreateDevSession(crushId: string, sessionType: string, title?: string) {
+  const data = await readStore();
+  const existing = data.chatSessions.find(
+    (session) => session.crushId === crushId && session.sessionType === sessionType && session.status === "active",
+  );
+
+  if (existing) {
+    return existing;
+  }
+
+  const createdAt = now();
+  const session: DevChatSession = {
+    id: crypto.randomUUID(),
+    crushId,
+    sessionType,
+    title: title ?? null,
+    scenarioType: null,
+    status: "active",
+    createdAt,
+    updatedAt: createdAt,
+  };
+  data.chatSessions.push(session);
+  await writeStore(data);
+  return session;
+}
+
+export async function getDevMessages(sessionId: string) {
+  const data = await readStore();
+  return data.messages.filter((message) => message.sessionId === sessionId);
+}
+
+export async function addDevMessage(input: {
+  sessionId: string;
+  role: "user" | "crush" | "coach" | "system";
+  content: string;
+  audioUrl?: string | null;
+  metadataJson?: unknown;
+}) {
+  const data = await readStore();
+  const message: DevMessage = {
+    id: crypto.randomUUID(),
+    sessionId: input.sessionId,
+    role: input.role,
+    content: input.content,
+    audioUrl: input.audioUrl ?? null,
+    metadataJson: input.metadataJson,
+    createdAt: now(),
+  };
+  data.messages.push(message);
+
+  const session = data.chatSessions.find((item) => item.id === input.sessionId);
+  if (session) {
+    session.updatedAt = message.createdAt;
+  }
+
+  if (input.role === "crush" && session) {
+    const metrics = data.growthMetrics.find((item) => item.crushId === session.crushId);
+    if (metrics) {
+      metrics.virtualIntimacy = Math.min(999, metrics.virtualIntimacy + 2);
+      metrics.emotionalStability = Math.min(100, metrics.emotionalStability + 1);
+      metrics.updatedAt = message.createdAt;
+    }
+  }
+
+  await writeStore(data);
+  return message;
+}
+
+export async function updateDevMessageAudio(messageId: string, audioUrl: string) {
+  const data = await readStore();
+  const message = data.messages.find((item) => item.id === messageId);
+
+  if (!message) {
+    return null;
+  }
+
+  message.audioUrl = audioUrl;
+  await writeStore(data);
+  return message;
+}
+
+export async function createDevMemory(input: {
+  crushId: string;
+  sourceType: string;
+  sourceId?: string | null;
+  title: string;
+  excerpt?: string | null;
+  imageUrl?: string | null;
+  rewardJson?: Record<string, unknown> | null;
+}) {
+  const data = await readStore();
+  const createdAt = now();
+  const memory: DevMemory = {
+    id: crypto.randomUUID(),
+    createdAt,
+    ...input,
+  };
+  data.memories.push(memory);
+  const metrics = data.growthMetrics.find((item) => item.crushId === input.crushId);
+  if (metrics) {
+    metrics.memoryFragments += 1;
+    metrics.virtualIntimacy = Math.min(999, metrics.virtualIntimacy + 5);
+    metrics.updatedAt = createdAt;
+  }
+  await writeStore(data);
+  return memory;
+}
+
+export async function getDevMemories(crushId: string) {
+  const data = await readStore();
+  return data.memories.filter((memory) => memory.crushId === crushId);
+}
+
+export async function getOrCreateDevVoiceProfile(crushId: string, theme = "sunny_campus") {
+  const data = await readStore();
+  const existing = data.voiceProfiles.find((profile) => profile.crushId === crushId);
+  if (existing) {
+    return existing;
+  }
+  const createdAt = now();
+  const voice: DevVoiceProfile = {
+    id: crypto.randomUUID(),
+    crushId,
+    voiceStyle: theme === "dream_otome" ? "romantic" : theme === "city_healing" ? "gentle" : "clear",
+    speed: theme === "city_healing" ? "slow" : "normal",
+    emotionLevel: theme === "dream_otome" ? "sweet" : "natural",
+    ageStyle: "young",
+    providerVoiceId: null,
+    createdAt,
+    updatedAt: createdAt,
+  };
+  data.voiceProfiles.push(voice);
+  await writeStore(data);
+  return voice;
+}
+
+export async function createDevQuickPractice(input: {
+  crushId: string;
+  scenarioType: string;
+  sendContext: string;
+  userLine: string;
+}) {
+  const data = await readStore();
+  const riskLevel =
+    input.userLine.includes("必须") || input.userLine.includes("为什么不回")
+      ? "high"
+      : input.userLine.includes("单独") || input.userLine.includes("喜欢")
+        ? "medium"
+        : "low";
+  const simulatedReply =
+    riskLevel === "high"
+      ? "我现在不太想聊这个，先这样吧。"
+      : riskLevel === "medium"
+        ? "啊这周可能有点忙，我看看吧。"
+        : "听起来可以呀，到时候看看时间。";
+  const suggestedLine =
+    riskLevel === "high"
+      ? "刚才我可能有点急了，你不用马上回复。等你方便的时候再说就好。"
+      : "你之前提到的那件事我也挺感兴趣。要是哪天你也想去，我们可以一起。";
+  const run: DevPracticeRun = {
+    id: crypto.randomUUID(),
+    crushId: input.crushId,
+    practiceType: "quick_line",
+    scenarioType: input.scenarioType,
+    sendContext: input.sendContext,
+    userLine: input.userLine,
+    riskLevel,
+    simulatedReply,
+    suggestedLine,
+    coachAnalysisJson: {
+      possibleFeeling: riskLevel === "low" ? "压力较小，像自然延续话题。" : "对方可能感到推进略快或被施压。",
+      mainRisk: riskLevel === "low" ? "风险较低。" : "铺垫不足，表达压力偏高。",
+      advice: riskLevel === "high" ? "建议先降频，避免追问。" : "降低邀约压力，保留对方选择空间。",
+    },
+    createdAt: now(),
+  };
+  data.practiceRuns.push(run);
+  const metrics = data.growthMetrics.find((item) => item.crushId === input.crushId);
+  if (metrics) {
+    metrics.communicationConfidence = Math.min(100, metrics.communicationConfidence + 3);
+    metrics.updatedAt = run.createdAt;
+  }
+  await writeStore(data);
+  return run;
+}
+
+export async function startDevSimulation(input: { crushId: string; scenarioType: string; goal: string; background: string }) {
+  const data = await readStore();
+  const createdAt = now();
+  const session: DevChatSession = {
+    id: crypto.randomUUID(),
+    crushId: input.crushId,
+    sessionType: "practice",
+    title: input.goal,
+    scenarioType: input.scenarioType,
+    status: "active",
+    createdAt,
+    updatedAt: createdAt,
+  };
+  data.chatSessions.push(session);
+  data.messages.push({
+    id: crypto.randomUUID(),
+    sessionId: session.id,
+    role: "system",
+    content: `背景：${input.background}`,
+    createdAt,
+  });
+  await writeStore(data);
+  return session;
+}
+
+export async function addDevSimulationTurn(sessionId: string, message: string) {
+  const data = await readStore();
+  const session = data.chatSessions.find((item) => item.id === sessionId);
+  if (!session) {
+    return null;
+  }
+  const createdAt = now();
+  const userMessage: DevMessage = {
+    id: crypto.randomUUID(),
+    sessionId,
+    role: "user",
+    content: message,
+    createdAt,
+  };
+  const crushReply = message.includes("抱歉")
+    ? "没事啦，只是当时有点突然。你这样说我会比较好理解。"
+    : "我听到了，不过我可能需要一点时间想想。";
+  const coachTip = {
+    riskLevel: message.includes("必须") ? "high" : "low",
+    advice: message.includes("抱歉") ? "表达清楚且不过度解释，可以停在这里给对方空间。" : "继续保持轻量，不要急着要求对方表态。",
+    nextMove: "观察对方是否主动延续话题。",
+  };
+  const crushMessage: DevMessage = {
+    id: crypto.randomUUID(),
+    sessionId,
+    role: "crush",
+    content: crushReply,
+    metadataJson: { coachTip },
+    createdAt,
+  };
+  const coachMessage: DevMessage = {
+    id: crypto.randomUUID(),
+    sessionId,
+    role: "coach",
+    content: coachTip.advice,
+    metadataJson: coachTip,
+    createdAt,
+  };
+  data.messages.push(userMessage, crushMessage, coachMessage);
+  session.updatedAt = createdAt;
+  await writeStore(data);
+  return { crushReply, coachTip, userMessage, crushMessage, coachMessage };
+}
+
+export async function finishDevSimulation(sessionId: string) {
+  const data = await readStore();
+  const session = data.chatSessions.find((item) => item.id === sessionId);
+  if (!session) {
+    return null;
+  }
+  session.status = "completed";
+  session.updatedAt = now();
+  const run: DevPracticeRun = {
+    id: crypto.randomUUID(),
+    crushId: session.crushId,
+    sessionId,
+    practiceType: "full_simulation",
+    scenarioType: session.scenarioType ?? "conversation",
+    riskLevel: "low",
+    simulatedReply: "整体反馈较温和，但仍建议给对方空间。",
+    suggestedLine: "刚刚那件事我想清楚了，不急着让你马上回应，只是想把我的意思说清楚。",
+    coachAnalysisJson: {
+      summary: "你完成了一轮克制表达，没有把压力推给对方。",
+      riskPoints: ["后续不要连续追问结果。"],
+      recommendedNextAction: "等待对方自然回应，至少间隔半天。",
+    },
+    createdAt: session.updatedAt,
+  };
+  data.practiceRuns.push(run);
+  await writeStore(data);
+  return run;
+}
+
+export async function createDevAction(input: {
+  crushId: string;
+  practiceRunId?: string | null;
+  title: string;
+  suggestedMessage?: string | null;
+}) {
+  const data = await readStore();
+  const createdAt = now();
+  const action: DevRealAction = {
+    id: crypto.randomUUID(),
+    crushId: input.crushId,
+    practiceRunId: input.practiceRunId ?? null,
+    title: input.title,
+    suggestedMessage: input.suggestedMessage ?? null,
+    status: "pending",
+    feedbackText: null,
+    executedAt: null,
+    createdAt,
+    updatedAt: createdAt,
+  };
+  data.realActions.push(action);
+  await writeStore(data);
+  return action;
+}
+
+export async function getDevActions(crushId: string) {
+  const data = await readStore();
+  return data.realActions.filter((action) => action.crushId === crushId);
+}
+
+export async function updateDevAction(actionId: string, input: { status: string; feedbackText?: string | null }) {
+  const data = await readStore();
+  const action = data.realActions.find((item) => item.id === actionId);
+  if (!action) {
+    return null;
+  }
+  const updatedAt = now();
+  action.status = input.status;
+  action.feedbackText = input.feedbackText ?? action.feedbackText ?? null;
+  action.updatedAt = updatedAt;
+  if (["sent", "positive_response", "neutral_response", "cold_response"].includes(input.status)) {
+    action.executedAt = action.executedAt ?? updatedAt;
+  }
+  const suggestion: DevProfileUpdateSuggestion = {
+    id: crypto.randomUUID(),
+    crushId: action.crushId,
+    sourceType: "action_feedback",
+    sourceId: action.id,
+    suggestionJson: {
+      facts: input.feedbackText ? [{ label: "现实反馈", value: input.feedbackText }] : [],
+      inferredTraits: [{ label: "互动温度", value: input.status === "positive_response" ? "中性偏暖" : "需要继续观察" }],
+    },
+    confidence: input.status === "positive_response" ? 0.72 : 0.55,
+    status: "pending",
+    createdAt: updatedAt,
+  };
+  data.profileUpdateSuggestions.push(suggestion);
+  const metrics = data.growthMetrics.find((item) => item.crushId === action.crushId);
+  if (metrics && action.executedAt) {
+    metrics.realActionCount += 1;
+    metrics.communicationConfidence = Math.min(100, metrics.communicationConfidence + 5);
+    metrics.updatedAt = updatedAt;
+  }
+  await writeStore(data);
+  return { action, suggestion };
+}
+
+export async function getDevSuggestions(crushId: string) {
+  const data = await readStore();
+  return data.profileUpdateSuggestions.filter((suggestion) => suggestion.crushId === crushId);
+}
+
+export async function resolveDevSuggestion(id: string, decision: "accepted" | "rejected") {
+  const data = await readStore();
+  const suggestion = data.profileUpdateSuggestions.find((item) => item.id === id);
+  if (!suggestion) {
+    return null;
+  }
+  suggestion.status = decision;
+  suggestion.resolvedAt = now();
+  if (decision === "accepted") {
+    const payload = suggestion.suggestionJson as {
+      facts?: { label: string; value?: string }[];
+      inferredTraits?: { label: string; value?: string }[];
+    };
+    for (const fact of payload.facts ?? []) {
+      data.crushTraits.push({
+        id: crypto.randomUUID(),
+        crushId: suggestion.crushId,
+        traitType: "event",
+        label: fact.label,
+        description: fact.value ?? null,
+        source: "ai",
+        confidence: suggestion.confidence,
+        confirmed: true,
+        createdAt: suggestion.resolvedAt,
+      });
+    }
+    const metrics = data.growthMetrics.find((item) => item.crushId === suggestion.crushId);
+    if (metrics) {
+      metrics.relationshipUnderstanding = Math.min(100, metrics.relationshipUnderstanding + 5);
+      metrics.updatedAt = suggestion.resolvedAt;
+    }
+  }
+  await writeStore(data);
+  return suggestion;
+}
+
+export async function destroyDevCrush(userId: string, crushId: string) {
+  const data = await readStore();
+  const profile = data.crushProfiles.find((item) => item.id === crushId && item.userId === userId);
+  if (!profile) {
+    return null;
+  }
+  profile.status = "destroyed";
+  profile.updatedAt = now();
+  data.crushTraits = data.crushTraits.filter((item) => item.crushId !== crushId);
+  data.growthMetrics = data.growthMetrics.filter((item) => item.crushId !== crushId);
+  data.onboardingMaterials = data.onboardingMaterials.filter((item) => item.crushId !== crushId);
+  data.aiProfileDrafts = data.aiProfileDrafts.filter((item) => item.crushId !== crushId);
+  data.visualAssets = data.visualAssets.filter((item) => item.crushId !== crushId);
+  data.voiceProfiles = data.voiceProfiles.filter((item) => item.crushId !== crushId);
+  const sessions = data.chatSessions.filter((item) => item.crushId === crushId).map((item) => item.id);
+  data.chatSessions = data.chatSessions.filter((item) => item.crushId !== crushId);
+  data.messages = data.messages.filter((item) => !sessions.includes(item.sessionId));
+  data.practiceRuns = data.practiceRuns.filter((item) => item.crushId !== crushId);
+  data.realActions = data.realActions.filter((item) => item.crushId !== crushId);
+  data.profileUpdateSuggestions = data.profileUpdateSuggestions.filter((item) => item.crushId !== crushId);
+  data.memories = data.memories.filter((item) => item.crushId !== crushId);
+  data.auditEvents.push({
+    id: crypto.randomUUID(),
+    userId,
+    eventType: "crush_destroyed",
+    metadataJson: { crushId },
+    createdAt: profile.updatedAt,
+  });
+  await writeStore(data);
+  return profile;
+}

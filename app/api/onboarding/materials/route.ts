@@ -1,0 +1,21 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { addCurrentCrushMaterial } from "@/lib/repositories";
+
+const requestSchema = z.object({
+  materialType: z.enum(["user_text", "pasted_chat", "event_note", "reference_image"]),
+  sanitizedText: z.string().trim().max(8000).optional().nullable(),
+  storageUrl: z.string().trim().max(1000).optional().nullable(),
+});
+
+export async function POST(request: Request) {
+  const body = await request.json().catch(() => null);
+  const parsed = requestSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return NextResponse.json({ error: "材料格式不正确。", issues: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const material = await addCurrentCrushMaterial(parsed.data);
+  return NextResponse.json({ materialId: material.id, material });
+}

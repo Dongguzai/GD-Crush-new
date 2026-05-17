@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
+  --font-display: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
+
+  --color-blush-50: #fff7f7;
+  --color-blush-100: #ffe6ea;
+  --color-blush-200: #ffc8d3;
+  --color-blush-500: #f36f8f;
+  --color-blush-700: #bd315e;
+  --color-ink-900: #28212a;
+  --color-ink-700: #5c5061;
+  --color-mint-100: #dbf8ee;
+  --color-mint-500: #4fbf9f;
+  --color-sun-100: #fff2bd;
+  --color-sun-500: #edb84c;
+}
+
+:root {
+  color-scheme: light;
+  --background: #fff8f5;
+  --foreground: #28212a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--background);
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: var(--foreground);
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 200, 211, 0.55), transparent 28rem),
+    radial-gradient(circle at 82% 14%, rgba(219, 248, 238, 0.78), transparent 26rem),
+    linear-gradient(135deg, #fff8f5 0%, #fff7fb 48%, #f7fffb 100%);
+  font-family: var(--font-sans);
+  font-weight: 400;
+}
+
+a:not([class]) {
+  color: inherit;
+  text-decoration: none;
+}
+
+a {
+  text-decoration: none;
+}
+
+.text-white {
+  color: #ffffff;
+}
+
+.font-black,
+.font-extrabold {
+  font-weight: 650;
+}
+
+.font-bold,
+.font-semibold {
+  font-weight: 600;
+}
+
+.font-display {
+  font-family: var(--font-sans);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+::selection {
+  background: #ffc8d3;
+  color: #28212a;
+}
