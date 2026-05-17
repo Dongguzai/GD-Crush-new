@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
       {
         pathname: "/api/mock-character",
       },
+      {
+        pathname: "/api/uploads/assets/**",
+      },
     ],
   },
 };

@@ -48,7 +48,7 @@ type DevAuditEvent = {
   createdAt: string;
 };
 
-type DevMaterial = {
+export type DevMaterial = {
   id: string;
   crushId: string;
   materialType: string;
@@ -73,7 +73,7 @@ type DevProfileDraft = {
   confirmedAt?: string | null;
 };
 
-type DevVisualAsset = {
+export type DevVisualAsset = {
   id: string;
   crushId: string;
   assetType: string;
@@ -568,41 +568,59 @@ export async function getDevTraits(crushId: string) {
 
 export async function addDevVisualAssets(
   crushId: string,
-  input: { theme: string; visualTags: Record<string, unknown> },
+  input: {
+    theme: string;
+    visualTags: Record<string, unknown>;
+    referenceImageKey?: string;
+  },
+  generatedAssets?: Array<{
+    assetType: string;
+    expression?: string | null;
+    storageUrl: string;
+    promptSnapshot?: string | null;
+  }>,
 ) {
   const data = await readStore();
   const createdAt = now();
   const base = `/api/mock-character?theme=${encodeURIComponent(input.theme)}&crush=${encodeURIComponent(crushId)}`;
-  const assets: DevVisualAsset[] = [
-    { assetType: "avatar", expression: null, storageUrl: `${base}&asset=avatar` },
-    { assetType: "portrait", expression: null, storageUrl: `${base}&asset=portrait` },
-    { assetType: "expression", expression: "neutral", storageUrl: `${base}&asset=neutral` },
-    { assetType: "expression", expression: "happy", storageUrl: `${base}&asset=happy` },
-    { assetType: "expression", expression: "shy", storageUrl: `${base}&asset=shy` },
-  ].map((asset) => ({
+  const assetInputs =
+    generatedAssets ??
+    [
+      { assetType: "avatar", expression: null, storageUrl: `${base}&asset=avatar` },
+      { assetType: "portrait", expression: null, storageUrl: `${base}&asset=portrait` },
+      { assetType: "expression", expression: "neutral", storageUrl: `${base}&asset=neutral` },
+      { assetType: "expression", expression: "happy", storageUrl: `${base}&asset=happy` },
+      { assetType: "expression", expression: "shy", storageUrl: `${base}&asset=shy` },
+    ];
+  const assets: DevVisualAsset[] = assetInputs.map((asset) => ({
     id: crypto.randomUUID(),
     crushId,
     theme: input.theme,
     visualTagsJson: input.visualTags,
-    promptSnapshot: "MVP mock two-dimensional otome character asset",
+    promptSnapshot: asset.promptSnapshot ?? "MVP mock two-dimensional otome character asset",
     createdAt,
     ...asset,
   }));
 
   data.visualAssets.push(...assets);
   const material = data.onboardingMaterials.find(
-    (item) => item.crushId === crushId && item.materialType === "reference_image" && item.retentionStatus === "temporary",
+    (item) =>
+      item.crushId === crushId &&
+      item.materialType === "reference_image" &&
+      item.retentionStatus === "temporary" &&
+      input.referenceImageKey &&
+      item.storageUrl === input.referenceImageKey,
   );
   if (material) {
     material.retentionStatus = "deleted";
     material.deletedAt = createdAt;
+    data.auditEvents.push({
+      id: crypto.randomUUID(),
+      userId: data.crushProfiles.find((profile) => profile.id === crushId)?.userId ?? "unknown",
+      eventType: "image_deleted",
+      createdAt,
+    });
   }
-  data.auditEvents.push({
-    id: crypto.randomUUID(),
-    userId: data.crushProfiles.find((profile) => profile.id === crushId)?.userId ?? "unknown",
-    eventType: "image_deleted",
-    createdAt,
-  });
   await writeStore(data);
   return assets;
 }
@@ -610,6 +628,11 @@ export async function addDevVisualAssets(
 export async function getDevVisualAssets(crushId: string) {
   const data = await readStore();
   return data.visualAssets.filter((asset) => asset.crushId === crushId);
+}
+
+export async function getDevMaterialsForCrush(crushId: string) {
+  const data = await readStore();
+  return data.onboardingMaterials.filter((material) => material.crushId === crushId);
 }
 
 export async function getOrCreateDevSession(crushId: string, sessionType: string, title?: string) {

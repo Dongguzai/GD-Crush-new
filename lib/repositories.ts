@@ -24,6 +24,7 @@ import {
   getDevGrowthMetrics,
   getDevSuggestions,
   getDevMaterials,
+  getDevMaterialsForCrush,
   getDevTraits,
   getDevVisualAssets,
   getOrCreateDevSession,
@@ -34,8 +35,11 @@ import {
   updateDevAction,
   updateDevMessageAudio,
 } from "@/lib/dev-store";
-import { hasDatabaseUrl } from "@/lib/env";
+import { getServerEnv, hasDatabaseUrl } from "@/lib/env";
 import { auditEvents, crushProfiles, growthMetrics, users, userSettings } from "@/db/schema";
+import { getImageGenerationService, type GeneratedVisualAssetInput } from "@/lib/image-generation-service";
+import { getStorageService } from "@/lib/storage-service";
+import type { VisualTheme } from "@/lib/visual-prompts";
 
 export async function confirmCurrentUserAge() {
   const userId = await getCurrentUserId();
@@ -230,8 +234,9 @@ export async function getProfileDraftById(draftId: string) {
 }
 
 export async function generateCurrentCrushVisualAssets(input: {
-  theme: string;
+  theme: VisualTheme;
   visualTags: Record<string, unknown>;
+  referenceImageKey?: string;
 }) {
   const userId = await getCurrentUserId();
   const active = await getActiveDevCrush(userId);
@@ -240,7 +245,65 @@ export async function generateCurrentCrushVisualAssets(input: {
     throw new Error("No active Crush profile.");
   }
 
-  return addDevVisualAssets(active.id, input);
+  let generatedAssets: GeneratedVisualAssetInput[] | undefined;
+
+  if (getServerEnv().APIMART_API_KEY) {
+    generatedAssets = await getImageGenerationService().generateCharacterAssets({
+      crushId: active.id,
+      theme: input.theme,
+      visualTags: input.visualTags,
+      personalitySummary: active.personalitySummary,
+      referenceImageKey: input.referenceImageKey,
+    });
+  }
+
+  const assets = await addDevVisualAssets(active.id, input, generatedAssets);
+
+  if (input.referenceImageKey) {
+    await getStorageService().deleteObject(input.referenceImageKey).catch((error) => {
+      console.warn("[Storage] Failed to delete temporary reference image", error);
+    });
+  }
+
+  return assets;
+}
+
+export async function generateCurrentCrushSceneAsset(input: {
+  theme: VisualTheme;
+  visualTags?: Record<string, unknown>;
+  sceneDescription: string;
+}) {
+  const userId = await getCurrentUserId();
+  const active = await getActiveDevCrush(userId);
+
+  if (!active) {
+    throw new Error("No active Crush profile.");
+  }
+
+  const generatedAsset = getServerEnv().APIMART_API_KEY
+    ? await getImageGenerationService().generateSceneAsset({
+        crushId: active.id,
+        theme: input.theme,
+        visualTags: input.visualTags,
+        sceneDescription: input.sceneDescription,
+      })
+    : {
+        assetType: "scene" as const,
+        expression: null,
+        storageUrl: `/api/mock-character?theme=${encodeURIComponent(input.theme)}&crush=${encodeURIComponent(active.id)}&asset=scene`,
+        promptSnapshot: "MVP mock two-dimensional otome scene asset",
+      };
+
+  const [asset] = await addDevVisualAssets(
+    active.id,
+    {
+      theme: input.theme,
+      visualTags: input.visualTags ?? {},
+    },
+    [generatedAsset],
+  );
+
+  return asset;
 }
 
 export async function getCurrentCompanionChat() {
@@ -444,5 +507,27 @@ export async function destroyCurrentCrush(confirmText: string) {
   if (!active) {
     return null;
   }
+
+  const storage = getStorageService();
+  const [assets, materials] = await Promise.all([
+    getDevVisualAssets(active.id),
+    getDevMaterialsForCrush(active.id),
+  ]);
+
+  await Promise.all([
+    ...assets.map((asset) =>
+      storage.deletePublicAssetByUrl(asset.storageUrl).catch((error) => {
+        console.warn("[Storage] Failed to delete persisted visual asset", error);
+      }),
+    ),
+    ...materials
+      .filter((material) => material.materialType === "reference_image" && material.storageUrl)
+      .map((material) =>
+        storage.deleteObject(material.storageUrl as string).catch((error) => {
+          console.warn("[Storage] Failed to delete reference image", error);
+        }),
+      ),
+  ]);
+
   return destroyDevCrush(userId, active.id);
 }

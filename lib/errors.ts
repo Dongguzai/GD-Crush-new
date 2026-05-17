@@ -73,6 +73,27 @@ export class ServiceUnavailableError extends ApiError {
   }
 }
 
+export class RateLimitError extends ApiError {
+  constructor(message: string = "请求过于频繁，请稍后再试", devMessage?: string) {
+    super(message, 429, devMessage);
+    this.name = "RateLimitError";
+  }
+}
+
+export class GatewayTimeoutError extends ApiError {
+  constructor(message: string = "请求超时，请稍后再试", devMessage?: string) {
+    super(message, 504, devMessage);
+    this.name = "GatewayTimeoutError";
+  }
+}
+
+export class BadGatewayError extends ApiError {
+  constructor(message: string = "上游服务返回异常", devMessage?: string) {
+    super(message, 502, devMessage);
+    this.name = "BadGatewayError";
+  }
+}
+
 export function handleApiError(error: unknown): NextResponse {
   console.error("[API Error]", error);
 

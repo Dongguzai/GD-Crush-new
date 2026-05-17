@@ -12,7 +12,7 @@ export default function VisualPage() {
             给 TA 选择一个虚拟世界。
           </h1>
           <p className="mt-5 max-w-xl text-lg leading-8 text-ink-700">
-            MVP 先使用 mock 角色生成流程，保留完整隐私与数据结构。接入图片模型后可替换 provider，不需要重做页面流程。
+            选择一个主题后，系统会生成头像、立绘和基础表情差分；如果你上传参考图，原图只用于本次生成，完成后会被删除。
           </p>
         </div>
 
