@@ -11,7 +11,10 @@ export async function getCurrentUserId() {
   const existing = cookieStore.get(USER_COOKIE)?.value;
 
   if (existing) {
-    await ensureDevUser(existing);
+    if (!hasDatabaseUrl()) {
+      await ensureDevUser(existing);
+    }
+
     return existing;
   }
 

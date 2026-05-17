@@ -153,7 +153,56 @@ export async function analyzeCurrentCrushProfile() {
     throw new Error("No active Crush profile.");
   }
 
-  return createDevProfileDraft(active.id);
+  const materials = await getDevMaterials(active.id);
+  const materialList = materials
+    .map((m) => m.sanitizedText)
+    .filter(Boolean) as string[];
+
+  let analysisResult: {
+    profile: {
+      personalityTraits: string[];
+      likes: string[];
+      dislikes: string[];
+      communicationStyle: string;
+    };
+    textAnalysis: {
+      emotionalTone: string;
+      underlyingIntent: string;
+    };
+  } | null = null;
+
+  try {
+    const { getDeepSeekService } = await import("@/lib/ai-service");
+    const aiService = getDeepSeekService();
+
+    const inputMaterials = [
+      { relationshipOrigin: active.relationshipOrigin },
+      { personalitySummary: active.personalitySummary },
+      { userGoal: active.userGoal },
+      { userAnxiety: active.userAnxiety },
+    ];
+    for (const text of materialList) {
+      inputMaterials.push({ personalitySummary: text });
+    }
+
+    analysisResult = await aiService.analyzeProfile(inputMaterials, active.nickname);
+  } catch (error) {
+    console.warn("[AI] Profile analysis failed, falling back to mock", error);
+  }
+
+  const personalityTraits = analysisResult?.profile?.personalityTraits ?? [];
+  const communicationStyle = analysisResult?.profile?.communicationStyle ?? "";
+  const likes = analysisResult?.profile?.likes ?? [];
+  const dislikes = analysisResult?.profile?.dislikes ?? [];
+  const emotionalTone = analysisResult?.textAnalysis?.emotionalTone ?? "";
+
+  return createDevProfileDraft(active.id, {
+    personalityTraits,
+    communicationStyle,
+    likes,
+    dislikes,
+    emotionalTone,
+  });
 }
 
 export async function confirmCurrentDraft(
@@ -207,7 +256,14 @@ export async function getCurrentCompanionChat() {
   return { profile: active, session, messages };
 }
 
-export async function sendCurrentCompanionMessage(message: string) {
+export async function sendCurrentCompanionMessage(
+  message: string,
+  context?: {
+    crushNickname?: string;
+    relationshipStage?: string;
+    interactionTemperature?: string;
+  }
+) {
   const userId = await getCurrentUserId();
   const active = await getActiveDevCrush(userId);
 
@@ -217,7 +273,23 @@ export async function sendCurrentCompanionMessage(message: string) {
 
   const session = await getOrCreateDevSession(active.id, "companion", "甜蜜陪伴");
   const userMessage = await addDevMessage({ sessionId: session.id, role: "user", content: message });
-  const reply = buildMockCompanionReply(active.nickname, message);
+
+  let reply: string;
+  try {
+    const { getDeepSeekService } = await import("@/lib/ai-service");
+    const aiService = getDeepSeekService();
+    reply = await aiService.sendMessage(
+      [{ role: "user", content: message }],
+      {
+        crushNickname: context?.crushNickname ?? active.nickname,
+        relationshipStage: context?.relationshipStage ?? active.realRelationshipStage,
+        interactionTemperature: context?.interactionTemperature ?? active.interactionTemperature,
+      }
+    );
+  } catch {
+    reply = buildMockCompanionReply(active.nickname, message);
+  }
+
   const crushMessage = await addDevMessage({ sessionId: session.id, role: "crush", content: reply });
   return { session, userMessage, crushMessage };
 }
@@ -281,7 +353,36 @@ export async function runCurrentQuickPractice(input: {
   if (!active) {
     throw new Error("No active Crush profile.");
   }
-  return createDevQuickPractice({ crushId: active.id, ...input });
+
+  let aiResult: {
+    riskLevel: string;
+    possibleFeeling: string;
+    mainRisk: string;
+    suggestedLine: string;
+    recommendedTiming: string;
+    shouldSend: boolean;
+  } | null = null;
+
+  try {
+    const { getDeepSeekService } = await import("@/lib/ai-service");
+    const aiService = getDeepSeekService();
+    aiResult = await aiService.quickLineTest(
+      input.userLine,
+      input.scenarioType,
+      {
+        crushNickname: active.nickname,
+        relationshipStage: active.realRelationshipStage,
+        sendContext: input.sendContext,
+      }
+    );
+  } catch (error) {
+    console.warn("[AI] Quick practice analysis failed, falling back to mock", error);
+  }
+
+  return createDevQuickPractice(
+    { crushId: active.id, ...input },
+    aiResult ?? undefined
+  );
 }
 
 export async function startCurrentSimulation(input: { scenarioType: string; goal: string; background: string }) {

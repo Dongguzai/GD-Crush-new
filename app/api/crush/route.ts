@@ -13,25 +13,43 @@ const createCrushSchema = z.object({
 });
 
 export async function GET() {
-  const crush = await getCurrentUserActiveCrush();
-  return NextResponse.json(crush);
+  try {
+    const crush = await getCurrentUserActiveCrush();
+    return NextResponse.json(crush);
+  } catch (error) {
+    console.error("[crush] failed to load current crush", error);
+
+    return NextResponse.json(
+      { error: "读取 Crush 档案失败，请稍后重试。" },
+      { status: 500 },
+    );
+  }
 }
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => null);
-  const parsed = createCrushSchema.safeParse(body);
+  try {
+    const body = await request.json().catch(() => null);
+    const parsed = createCrushSchema.safeParse(body);
 
-  if (!parsed.success) {
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Crush 信息不完整或格式不正确。", issues: parsed.error.flatten() },
+        { status: 400 },
+      );
+    }
+
+    const profile = await createCurrentUserCrush(parsed.data);
+
+    return NextResponse.json({
+      crushId: profile.id,
+      profile,
+    });
+  } catch (error) {
+    console.error("[crush] failed to create crush", error);
+
     return NextResponse.json(
-      { error: "Crush 信息不完整或格式不正确。", issues: parsed.error.flatten() },
-      { status: 400 },
+      { error: "创建 Crush 草稿失败，请稍后重试。" },
+      { status: 500 },
     );
   }
-
-  const profile = await createCurrentUserCrush(parsed.data);
-
-  return NextResponse.json({
-    crushId: profile.id,
-    profile,
-  });
 }
