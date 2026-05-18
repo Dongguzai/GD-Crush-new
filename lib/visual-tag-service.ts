@@ -6,6 +6,7 @@ import {
   RateLimitError,
   ServiceUnavailableError,
 } from "@/lib/errors";
+import { visualTagsSchema, type VisualTagsResult } from "@/lib/ai-output-schemas";
 import { getServerEnv, isVisionDebugEnabled } from "@/lib/env";
 import { getStorageService } from "@/lib/storage-service";
 
@@ -13,17 +14,7 @@ const DEFAULT_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3/responses";
 const MODEL = "doubao-seed-2-0-pro-260215";
 const REQUEST_TIMEOUT_MS = 30_000;
 
-export type VisualTags = {
-  hairStyle: string;
-  hairColor: string;
-  outfitMood: string;
-  overallVibe: string;
-  expressionMood: string;
-  ageImpressionRange: string;
-  unsafeOrSensitiveElements: string[];
-  hasPerson: boolean;
-  notes?: string;
-};
+export type VisualTags = VisualTagsResult;
 
 type ArkResponse = {
   output?: Array<{
@@ -114,27 +105,23 @@ function extractJsonObject(text: string) {
     throw new BadGatewayError("视觉标签服务未返回可解析的 JSON");
   }
 
-  return JSON.parse(candidate.slice(start, end + 1)) as Record<string, unknown>;
+  try {
+    return JSON.parse(candidate.slice(start, end + 1)) as unknown;
+  } catch (error) {
+    throw new BadGatewayError(
+      "视觉标签服务返回了无法解析的 JSON",
+      error instanceof Error ? error.message : undefined,
+    );
+  }
 }
 
-function normalizeVisualTags(value: Record<string, unknown>): VisualTags {
-  const text = (key: string, fallback = "") =>
-    typeof value[key] === "string" ? (value[key] as string).trim() : fallback;
-  const unsafe = Array.isArray(value.unsafeOrSensitiveElements)
-    ? value.unsafeOrSensitiveElements.filter((item): item is string => typeof item === "string")
-    : [];
-
-  return {
-    hairStyle: text("hairStyle"),
-    hairColor: text("hairColor"),
-    outfitMood: text("outfitMood"),
-    overallVibe: text("overallVibe"),
-    expressionMood: text("expressionMood"),
-    ageImpressionRange: text("ageImpressionRange"),
-    unsafeOrSensitiveElements: unsafe,
-    hasPerson: typeof value.hasPerson === "boolean" ? value.hasPerson : true,
-    notes: text("notes") || undefined,
-  };
+function parseVisualTags(value: unknown): VisualTags {
+  const parsed = visualTagsSchema.safeParse(value);
+  if (!parsed.success) {
+    log("warn", "Visual tags schema validation failed", parsed.error.flatten());
+    throw new BadGatewayError("视觉标签服务返回的结构不正确", parsed.error.message);
+  }
+  return parsed.data;
 }
 
 function buildPrompt() {
@@ -206,7 +193,7 @@ export class VisualTagService {
 
     const body = (await response.json()) as ArkResponse;
     const assistantText = extractAssistantText(body);
-    const visualTags = normalizeVisualTags(extractJsonObject(assistantText));
+    const visualTags = parseVisualTags(extractJsonObject(assistantText));
 
     log("info", "Visual tags extracted", { visualTags });
     return { visualTags, provider: "ark-responses" };

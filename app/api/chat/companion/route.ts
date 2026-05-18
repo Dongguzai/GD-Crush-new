@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentCompanionChat, sendCurrentCompanionMessage, getCurrentUserActiveCrush } from "@/lib/repositories";
-import { handleApiError } from "@/lib/errors";
+import { badRequestResponse, handleApiError } from "@/lib/errors";
 
 const requestSchema = z.object({
   message: z.string().trim().min(1).max(2000),
@@ -23,10 +23,7 @@ export async function POST(request: Request) {
     const parsed = requestSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "消息不能为空。", issues: parsed.error.flatten() },
-        { status: 400 }
-      );
+      return badRequestResponse("消息不能为空。", parsed.error.flatten());
     }
 
     const { profile: activeCrush } = await getCurrentUserActiveCrush();

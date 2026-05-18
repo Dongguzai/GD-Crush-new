@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { badRequestResponse, internalErrorResponse } from "@/lib/errors";
 import { createCurrentUserCrush, getCurrentUserActiveCrush } from "@/lib/repositories";
 import { RELATIONSHIP_STAGES } from "@/lib/constants";
 
@@ -19,9 +20,9 @@ export async function GET() {
   } catch (error) {
     console.error("[crush] failed to load current crush", error);
 
-    return NextResponse.json(
-      { error: "读取 Crush 档案失败，请稍后重试。" },
-      { status: 500 },
+    return internalErrorResponse(
+      "读取 Crush 档案失败，请稍后重试。",
+      error instanceof Error ? error.message : undefined,
     );
   }
 }
@@ -32,10 +33,7 @@ export async function POST(request: Request) {
     const parsed = createCrushSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Crush 信息不完整或格式不正确。", issues: parsed.error.flatten() },
-        { status: 400 },
-      );
+      return badRequestResponse("Crush 信息不完整或格式不正确。", parsed.error.flatten());
     }
 
     const profile = await createCurrentUserCrush(parsed.data);
@@ -47,9 +45,9 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("[crush] failed to create crush", error);
 
-    return NextResponse.json(
-      { error: "创建 Crush 草稿失败，请稍后重试。" },
-      { status: 500 },
+    return internalErrorResponse(
+      "创建 Crush 草稿失败，请稍后重试。",
+      error instanceof Error ? error.message : undefined,
     );
   }
 }

@@ -48,6 +48,8 @@ Acceptance:
 
 ### [P0] M1.2 Add ownership and authorization checks to all ID-based APIs
 
+Status: Completed on 2026-05-18
+
 Dependencies: M1.1
 
 Scope:
@@ -70,6 +72,8 @@ Acceptance:
 - Unauthorized access behavior is consistent across routes.
 
 ### [P0] M1.3 Complete production-grade Crush destroy flow
+
+Status: Completed on 2026-05-18
 
 Dependencies: M1.1, M1.2
 
@@ -103,6 +107,8 @@ Acceptance:
 
 ### [P0] M1.4 Add strict schema validation for AI outputs
 
+Status: Completed on 2026-05-18
+
 Dependencies: None
 
 Scope:
@@ -123,6 +129,8 @@ Acceptance:
 - Key AI flows include regression coverage for malformed provider responses.
 
 ### [P0] M1.5 Add integration tests for golden paths
+
+Status: Completed on 2026-05-18
 
 Dependencies: M1.1, M1.2, M1.3, M1.4
 
@@ -155,6 +163,8 @@ Acceptance:
 
 ### [P0] M1.6 Normalize asset retention and deletion lifecycle
 
+Status: Completed on 2026-05-18
+
 Dependencies: M1.1, M1.3
 
 Scope:
@@ -180,6 +190,8 @@ Acceptance:
 - Product copy about retention matches actual behavior.
 
 ### [P0] M1.7 Standardize API errors, empty states, and loading behavior
+
+Status: Completed on 2026-05-18
 
 Dependencies: None
 

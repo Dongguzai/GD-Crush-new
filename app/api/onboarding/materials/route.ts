@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { badRequestResponse, internalErrorResponse } from "@/lib/errors";
 import { addCurrentCrushMaterial } from "@/lib/repositories";
 
 const requestSchema = z.object({
@@ -14,10 +15,7 @@ export async function POST(request: Request) {
     const parsed = requestSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "材料格式不正确。", issues: parsed.error.flatten() },
-        { status: 400 },
-      );
+      return badRequestResponse("材料格式不正确。", parsed.error.flatten());
     }
 
     const material = await addCurrentCrushMaterial(parsed.data);
@@ -25,9 +23,9 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("[onboarding/materials] failed to save material", error);
 
-    return NextResponse.json(
-      { error: "材料保存失败，请稍后重试。" },
-      { status: 500 },
+    return internalErrorResponse(
+      "材料保存失败，请稍后重试。",
+      error instanceof Error ? error.message : undefined,
     );
   }
 }

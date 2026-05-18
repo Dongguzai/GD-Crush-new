@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, PencilLine } from "lucide-react";
+import { StatePanel } from "@/components/state-panel";
+import { getClientErrorMessage, readApiResponse } from "@/lib/api-client";
 
 type Draft = {
   id: string;
@@ -23,23 +25,23 @@ export function DraftReview({ draft }: { draft: Draft }) {
     setError(null);
 
     startTransition(async () => {
-      const response = await fetch("/api/onboarding/confirm-draft", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          draftId: draft.id,
-          realRelationshipStage: draft.recommendedStage,
-          interactionTemperature: draft.interactionTemperature,
-        }),
-      });
-
-      if (response.ok) {
+      try {
+        await readApiResponse(
+          await fetch("/api/onboarding/confirm-draft", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              draftId: draft.id,
+              realRelationshipStage: draft.recommendedStage,
+              interactionTemperature: draft.interactionTemperature,
+            }),
+          }),
+          "草稿确认失败，请稍后重试。",
+        );
         router.push("/onboarding/visual");
-        return;
+      } catch (nextError) {
+        setError(getClientErrorMessage(nextError, "草稿确认失败，请稍后重试。"));
       }
-
-      const data = (await response.json().catch(() => null)) as { error?: string } | null;
-      setError(data?.error ?? "草稿确认失败，请稍后重试。");
     });
   }
 
@@ -55,7 +57,7 @@ export function DraftReview({ draft }: { draft: Draft }) {
         <Metric label="置信度" value={`${Math.round(draft.confidence * 100)}%`} />
       </div>
 
-      {error ? <p className="rounded-2xl bg-blush-50 p-3 text-sm font-bold text-blush-700">{error}</p> : null}
+      {error ? <StatePanel tone="error" title="草稿还没写入" description={error} /> : null}
 
       <button
         className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-ink-900 px-6 text-base font-bold text-white shadow-lg shadow-blush-200 transition hover:-translate-y-0.5 hover:bg-blush-700 disabled:opacity-60"

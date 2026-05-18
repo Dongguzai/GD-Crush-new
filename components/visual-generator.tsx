@@ -3,6 +3,8 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ImageUp, WandSparkles } from "lucide-react";
+import { StatePanel } from "@/components/state-panel";
+import { getClientErrorMessage, readApiResponse } from "@/lib/api-client";
 
 const themes = [
   { id: "sunny_campus", label: "晴日校园", description: "阳光、课后、便利店、青春感" },
@@ -40,54 +42,41 @@ export function VisualGenerator() {
           setStatus("正在上传参考图...");
           const formData = new FormData();
           formData.append("file", referenceFile);
-          const uploadResponse = await fetch("/api/uploads/reference-image", {
-            method: "POST",
-            body: formData,
-          });
-
-          if (!uploadResponse.ok) {
-            const body = (await uploadResponse.json().catch(() => null)) as { message?: string } | null;
-            setStatus(body?.message ?? "参考图上传失败，请稍后重试。");
-            return;
-          }
-
-          const uploaded = (await uploadResponse.json()) as { temporaryObjectKey: string };
+          const uploaded = await readApiResponse<{ temporaryObjectKey: string }>(
+            await fetch("/api/uploads/reference-image", {
+              method: "POST",
+              body: formData,
+            }),
+            "参考图上传失败，请稍后重试。",
+          );
           referenceImageKey = uploaded.temporaryObjectKey;
 
           setStatus("正在提取非身份化视觉标签...");
-          const extractResponse = await fetch("/api/visual/extract-tags", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ temporaryObjectKey: uploaded.temporaryObjectKey }),
-          });
-
-          if (!extractResponse.ok) {
-            const body = (await extractResponse.json().catch(() => null)) as { message?: string } | null;
-            setStatus(body?.message ?? "视觉标签提取失败，请稍后重试。");
-            return;
-          }
-
-          const extracted = (await extractResponse.json()) as { visualTags: typeof visualTags };
+          const extracted = await readApiResponse<{ visualTags: typeof visualTags }>(
+            await fetch("/api/visual/extract-tags", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ temporaryObjectKey: uploaded.temporaryObjectKey }),
+            }),
+            "视觉标签提取失败，请稍后重试。",
+          );
           visualTags = extracted.visualTags;
         }
 
         setStatus("正在生成二次元角色资产，并持久化保存...");
-        const response = await fetch("/api/visual/generate-character", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ theme, visualTags, referenceImageKey }),
-        });
+        await readApiResponse(
+          await fetch("/api/visual/generate-character", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ theme, visualTags, referenceImageKey }),
+          }),
+          "生成失败，请稍后重试。",
+        );
 
-        if (response.ok) {
-          router.push("/app");
-          router.refresh();
-          return;
-        }
-
-        const body = (await response.json().catch(() => null)) as { message?: string } | null;
-        setStatus(body?.message ?? "生成失败，请稍后重试。");
-      } catch {
-        setStatus("生成失败，请检查网络后重试。");
+        router.push("/app");
+        router.refresh();
+      } catch (nextError) {
+        setStatus(getClientErrorMessage(nextError, "生成失败，请检查网络后重试。"));
       }
     });
   }
@@ -152,7 +141,13 @@ export function VisualGenerator() {
         </div>
       ) : null}
 
-      {status ? <p className="rounded-2xl bg-blush-50 p-3 text-sm font-bold text-blush-700">{status}</p> : null}
+      {status ? (
+        <StatePanel
+          tone={isPending ? "loading" : "error"}
+          title={isPending ? "生成进行中" : "视觉生成暂停了"}
+          description={status}
+        />
+      ) : null}
 
       <button
         className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-ink-900 px-6 text-base font-bold text-white shadow-lg shadow-blush-200 transition hover:-translate-y-0.5 hover:bg-blush-700 disabled:opacity-60"

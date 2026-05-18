@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { badRequestResponse, internalErrorResponse, notFoundResponse } from "@/lib/errors";
 import { confirmCurrentDraft } from "@/lib/repositories";
 
 const requestSchema = z.object({
@@ -18,25 +19,22 @@ export async function POST(request: Request) {
     const parsed = requestSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "草稿确认参数不正确。", issues: parsed.error.flatten() },
-        { status: 400 },
-      );
+      return badRequestResponse("草稿确认参数不正确。", parsed.error.flatten());
     }
 
     const result = await confirmCurrentDraft(parsed.data.draftId, parsed.data);
 
     if (!result) {
-      return NextResponse.json({ error: "找不到待确认的建档草稿。" }, { status: 404 });
+      return notFoundResponse("找不到待确认的建档草稿。");
     }
 
     return NextResponse.json({ ok: true, profile: result.profile });
   } catch (error) {
     console.error("[onboarding/confirm-draft] failed to confirm draft", error);
 
-    return NextResponse.json(
-      { error: "草稿确认失败，请稍后重试。" },
-      { status: 500 },
+    return internalErrorResponse(
+      "草稿确认失败，请稍后重试。",
+      error instanceof Error ? error.message : undefined,
     );
   }
 }

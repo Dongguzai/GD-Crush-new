@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { notFoundResponse } from "@/lib/errors";
 import { getLocalStorageService, getPublicAssetContentType } from "@/lib/storage-service";
 
 export async function GET(
@@ -17,6 +17,6 @@ export async function GET(
       },
     });
   } catch {
-    return NextResponse.json({ error: "资源不存在。" }, { status: 404 });
+    return notFoundResponse("资源不存在。");
   }
 }

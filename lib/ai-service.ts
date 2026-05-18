@@ -1,8 +1,22 @@
 import "server-only";
 
+import type { ZodType } from "zod";
+import {
+  coachAnalysisSchema,
+  profileAnalysisSchema,
+  quickLineAnalysisSchema,
+  realityFeedbackSchema,
+  textAnalysisSchema,
+  type CoachAnalysisResult,
+  type ProfileAnalysisResult,
+  type QuickLineAnalysisResult,
+  type RealityFeedbackResult,
+  type TextAnalysisResult,
+} from "@/lib/ai-output-schemas";
+import { BadGatewayError } from "@/lib/errors";
 import { getServerEnv, isAiDebugEnabled } from "@/lib/env";
 
-const API_BASE_URL = "https://api.deepseek.com/v1";
+const DEFAULT_API_BASE_URL = "https://api.deepseek.com/v1";
 const REQUEST_TIMEOUT_MS = 30000;
 const MAX_RETRIES = 3;
 
@@ -18,36 +32,6 @@ export interface AiResponse {
   usage: {
     inputTokens: number;
     outputTokens: number;
-  };
-}
-
-export interface ProfileAnalysisResult {
-  profile: {
-    name: string | null;
-    gender: string | null;
-    personalityTraits: string[];
-    likes: string[];
-    dislikes: string[];
-    communicationStyle: string;
-    currentMood: string;
-    relationshipStage: string;
-  };
-  textAnalysis: {
-    emotionalTone: string;
-    powerDynamic: string;
-    underlyingIntent: string;
-    coachAnalysis: {
-      userRole: string;
-      strengths: string;
-      weaknesses: string;
-      suggestedReply: string;
-      replayStrategy: string;
-    };
-  };
-  realityFeedback: {
-    progress: string;
-    obstacles: string;
-    nextStepSuggestion: string;
   };
 }
 
@@ -157,15 +141,36 @@ function parseAiResponse(raw: unknown): AiResponse {
   };
 }
 
-function extractJsonFromResponse(content: string): Record<string, unknown> | null {
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) return null;
+function extractJsonFromResponse(content: string): unknown {
+  const fenced = content.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
+  const candidate = fenced ?? content;
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+
+  if (start === -1 || end === -1 || end <= start) {
+    throw new BadGatewayError("AI 服务未返回可解析的 JSON");
+  }
 
   try {
-    return JSON.parse(jsonMatch[0]);
-  } catch {
-    return null;
+    return JSON.parse(candidate.slice(start, end + 1));
+  } catch (error) {
+    throw new BadGatewayError(
+      "AI 服务返回了无法解析的 JSON",
+      error instanceof Error ? error.message : undefined,
+    );
   }
+}
+
+function parseStructuredResponse<T>(content: string, schema: ZodType<T>, label: string): T {
+  const parsedJson = extractJsonFromResponse(content);
+  const parsed = schema.safeParse(parsedJson);
+
+  if (!parsed.success) {
+    log("warn", `${label} schema validation failed`, parsed.error.flatten());
+    throw new BadGatewayError(`AI 服务返回的${label}结构不正确`, parsed.error.message);
+  }
+
+  return parsed.data;
 }
 
 export class DeepSeekService {
@@ -185,7 +190,8 @@ export class DeepSeekService {
     messages: AiMessage[],
     maxTokens: number = 4096
   ): Promise<AiResponse> {
-    const url = `${API_BASE_URL}/messages`;
+    const apiBaseUrl = getServerEnv().DEEPSEEK_API_BASE_URL ?? DEFAULT_API_BASE_URL;
+    const url = `${apiBaseUrl.replace(/\/$/, "")}/messages`;
 
     log("info", "Sending request", {
       model,
@@ -310,10 +316,38 @@ ${context?.interactionTemperature ? `互动温度：${context.interactionTempera
 - 情报提取：从对话中敏锐捕捉隐藏信息和对方的真实意图。
 
 【2. 结构化 JSON 分析模式】
-当用户明确要求"建档"、"分析"或"输出JSON"时，你必须严格以合法的 JSON 格式返回结果，不包含任何多余的解释文本。JSON 需包含以下结构：
-- "profile" (深度建档)：提取人物的性格特征、喜好、雷区等。
-- "text_analysis" (聊天文本分析)：分析当前对话的情绪走向、权力关系和潜在意图。
-- "reality_feedback" (现实反馈提取)：总结这段关系在现实中的推进进度或遇到的阻碍。`;
+当用户明确要求"建档"、"分析"或"输出JSON"时，你必须严格以合法的 JSON 格式返回结果，不包含任何多余的解释文本。
+
+必须严格返回以下 camelCase 结构，不得省略字段，也不得新增字段：
+{
+  "profile": {
+    "name": null,
+    "gender": null,
+    "personalityTraits": [],
+    "likes": [],
+    "dislikes": [],
+    "communicationStyle": "",
+    "currentMood": "",
+    "relationshipStage": ""
+  },
+  "textAnalysis": {
+    "emotionalTone": "",
+    "powerDynamic": "",
+    "underlyingIntent": "",
+    "coachAnalysis": {
+      "userRole": "",
+      "strengths": "",
+      "weaknesses": "",
+      "suggestedReply": "",
+      "replayStrategy": ""
+    }
+  },
+  "realityFeedback": {
+    "progress": "",
+    "obstacles": "",
+    "nextStepSuggestion": ""
+  }
+}`;
 
     const userMessage = `${nickname ? `分析对象昵称：${nickname}\n\n` : ""}建档材料如下，请输出 JSON 格式的深度建档结果：
 
@@ -323,12 +357,7 @@ ${materialText || "暂无建档材料，请基于默认假设生成基础档案�
       { role: "user", content: userMessage },
     ]);
 
-    const jsonData = extractJsonFromResponse(response.content);
-    if (!jsonData) {
-      throw new Error("Failed to parse JSON from AI response");
-    }
-
-    return jsonData as unknown as ProfileAnalysisResult;
+    return parseStructuredResponse(response.content, profileAnalysisSchema, "建档分析");
   }
 
   async analyzeText(
@@ -337,16 +366,7 @@ ${materialText || "暂无建档材料，请基于默认假设生成基础档案�
       crushNickname?: string;
       relationshipStage?: string;
     }
-  ): Promise<{
-    emotionalTone: string;
-    powerDynamic: string;
-    underlyingIntent: string;
-    coachAnalysis: {
-      strengths: string;
-      weaknesses: string;
-      suggestedReply: string;
-    };
-  }> {
+  ): Promise<TextAnalysisResult> {
     const systemPrompt = `你是一个顶尖的情感沟通教练。请分析用户提供的文本内容，以 JSON 格式返回分析结果。
 
 要求：
@@ -359,12 +379,7 @@ ${materialText || "暂无建档材料，请基于默认假设生成基础档案�
       { role: "user", content: userMessage },
     ]);
 
-    const jsonData = extractJsonFromResponse(response.content);
-    if (!jsonData) {
-      throw new Error("Failed to parse JSON from AI response");
-    }
-
-    return jsonData as Awaited<ReturnType<typeof this.analyzeText>>;
+    return parseStructuredResponse(response.content, textAnalysisSchema, "文本分析");
   }
 
   async quickLineTest(
@@ -375,14 +390,7 @@ ${materialText || "暂无建档材料，请基于默认假设生成基础档案�
       relationshipStage?: string;
       sendContext?: string;
     }
-  ): Promise<{
-    riskLevel: string;
-    possibleFeeling: string;
-    mainRisk: string;
-    suggestedLine: string;
-    recommendedTiming: string;
-    shouldSend: boolean;
-  }> {
+  ): Promise<QuickLineAnalysisResult> {
     const systemPrompt = `你是一个顶尖的情感沟通教练，专注于一句话风险评估。
 
 【输入信息】
@@ -417,12 +425,7 @@ ${userLine}
       { role: "user", content: userMessage },
     ]);
 
-    const jsonData = extractJsonFromResponse(response.content);
-    if (!jsonData) {
-      throw new Error("Failed to parse JSON from AI response");
-    }
-
-    return jsonData as Awaited<ReturnType<typeof this.quickLineTest>>;
+    return parseStructuredResponse(response.content, quickLineAnalysisSchema, "一句话演练分析");
   }
 
   async extractRealityFeedback(
@@ -431,12 +434,7 @@ ${userLine}
       crushNickname?: string;
       relationshipStage?: string;
     }
-  ): Promise<{
-    progress: string;
-    obstacles: string;
-    relationshipSignals: Array<{ type: string; description: string; confidence: number }>;
-    nextStepSuggestion: string;
-  }> {
+  ): Promise<RealityFeedbackResult> {
     const systemPrompt = `你是一个高级数据分析师，专门分析恋爱关系中的现实反馈。
 
 【输入信息】
@@ -469,12 +467,7 @@ ${userLine}
       { role: "user", content: userMessage },
     ]);
 
-    const jsonData = extractJsonFromResponse(response.content);
-    if (!jsonData) {
-      throw new Error("Failed to parse JSON from AI response");
-    }
-
-    return jsonData as Awaited<ReturnType<typeof this.extractRealityFeedback>>;
+    return parseStructuredResponse(response.content, realityFeedbackSchema, "现实反馈分析");
   }
 
   async coachAnalysis(
@@ -484,11 +477,7 @@ ${userLine}
       relationshipStage?: string;
       chatHistory?: Array<{ role: string; content: string }>;
     }
-  ): Promise<{
-    analysis: string;
-    suggestedReply: string;
-    emotionalSupport: string;
-  }> {
+  ): Promise<CoachAnalysisResult> {
     const systemPrompt = `你是一个顶尖的情感沟通教练，以旁观者视角分析用户的消息。
 
 【分析维度】
@@ -515,12 +504,7 @@ ${userLine}
       { role: "user", content: userMessageText },
     ]);
 
-    const jsonData = extractJsonFromResponse(response.content);
-    if (!jsonData) {
-      throw new Error("Failed to parse JSON from AI response");
-    }
-
-    return jsonData as Awaited<ReturnType<typeof this.coachAnalysis>>;
+    return parseStructuredResponse(response.content, coachAnalysisSchema, "教练分析");
   }
 }
 

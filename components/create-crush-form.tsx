@@ -3,11 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, LockKeyhole, Sparkles } from "lucide-react";
-
-async function readErrorMessage(response: Response, fallback: string) {
-  const data = (await response.json().catch(() => null)) as { error?: string } | null;
-  return data?.error ?? fallback;
-}
+import { StatePanel } from "@/components/state-panel";
+import { getClientErrorMessage, readApiResponse } from "@/lib/api-client";
 
 export function CreateCrushForm() {
   const router = useRouter();
@@ -31,52 +28,48 @@ export function CreateCrushForm() {
     }
 
     startTransition(async () => {
-      const crushResponse = await fetch("/api/crush", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nickname,
-          relationshipOrigin: String(formData.get("relationshipOrigin") ?? ""),
-          currentStageGuess: String(formData.get("currentStageGuess") ?? "普通朋友"),
-          lastInteraction: String(formData.get("lastInteraction") ?? ""),
-          userGoal: String(formData.get("userGoal") ?? ""),
-          userAnxiety: String(formData.get("userAnxiety") ?? ""),
-        }),
-      });
+      try {
+        await readApiResponse(
+          await fetch("/api/crush", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              nickname,
+              relationshipOrigin: String(formData.get("relationshipOrigin") ?? ""),
+              currentStageGuess: String(formData.get("currentStageGuess") ?? "普通朋友"),
+              lastInteraction: String(formData.get("lastInteraction") ?? ""),
+              userGoal: String(formData.get("userGoal") ?? ""),
+              userAnxiety: String(formData.get("userAnxiety") ?? ""),
+            }),
+          }),
+          "创建 Crush 草稿失败，请检查输入。",
+        );
 
-      if (!crushResponse.ok) {
-        setError(await readErrorMessage(crushResponse, "创建 Crush 草稿失败，请检查输入。"));
-        return;
-      }
+        const materialPayloads = [
+          { materialType: "user_text", sanitizedText: String(formData.get("personalityNotes") ?? "") },
+          { materialType: "event_note", sanitizedText: String(formData.get("eventNotes") ?? "") },
+          { materialType: "pasted_chat", sanitizedText: pastedChat },
+        ].filter((item) => item.sanitizedText.trim().length > 0);
 
-      const materialPayloads = [
-        { materialType: "user_text", sanitizedText: String(formData.get("personalityNotes") ?? "") },
-        { materialType: "event_note", sanitizedText: String(formData.get("eventNotes") ?? "") },
-        { materialType: "pasted_chat", sanitizedText: pastedChat },
-      ].filter((item) => item.sanitizedText.trim().length > 0);
-
-      for (const payload of materialPayloads) {
-        const materialResponse = await fetch("/api/onboarding/materials", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-
-        if (!materialResponse.ok) {
-          setError(await readErrorMessage(materialResponse, "材料保存失败，请稍后重试。"));
-          return;
+        for (const payload of materialPayloads) {
+          await readApiResponse(
+            await fetch("/api/onboarding/materials", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            }),
+            "材料保存失败，请稍后重试。",
+          );
         }
+
+        const draft = await readApiResponse<{ draftId: string }>(
+          await fetch("/api/onboarding/analyze", { method: "POST" }),
+          "AI 建档草稿生成失败，请稍后重试。",
+        );
+        router.push(`/onboarding/review?draftId=${draft.draftId}`);
+      } catch (nextError) {
+        setError(getClientErrorMessage(nextError, "创建流程失败，请稍后重试。"));
       }
-
-      const analyzeResponse = await fetch("/api/onboarding/analyze", { method: "POST" });
-
-      if (!analyzeResponse.ok) {
-        setError(await readErrorMessage(analyzeResponse, "AI 建档草稿生成失败，请稍后重试。"));
-        return;
-      }
-
-      const draft = (await analyzeResponse.json()) as { draftId: string };
-      router.push(`/onboarding/review?draftId=${draft.draftId}`);
     });
   }
 
@@ -119,7 +112,7 @@ export function CreateCrushForm() {
         </span>
       </label>
 
-      {error ? <p className="rounded-2xl bg-blush-50 p-3 text-sm font-bold text-blush-700">{error}</p> : null}
+      {error ? <StatePanel tone="error" title="创建流程暂停了" description={error} /> : null}
 
       <button
         className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-ink-900 px-6 text-base font-bold text-white shadow-lg shadow-blush-200 transition hover:-translate-y-0.5 hover:bg-blush-700 disabled:opacity-60"

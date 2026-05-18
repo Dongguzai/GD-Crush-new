@@ -8,6 +8,36 @@ export interface ApiErrorResponse {
   issues?: unknown;
 }
 
+export function apiErrorResponse(payload: ApiErrorResponse): NextResponse {
+  return NextResponse.json(payload, { status: payload.statusCode });
+}
+
+export function badRequestResponse(message: string, issues?: unknown): NextResponse {
+  return apiErrorResponse({
+    error: "BadRequestError",
+    message,
+    statusCode: 400,
+    issues,
+  });
+}
+
+export function notFoundResponse(message: string): NextResponse {
+  return apiErrorResponse({
+    error: "NotFoundError",
+    message,
+    statusCode: 404,
+  });
+}
+
+export function internalErrorResponse(message: string, devMessage?: string): NextResponse {
+  return apiErrorResponse({
+    error: "InternalError",
+    message,
+    statusCode: 500,
+    devMessage: process.env.NODE_ENV === "development" ? devMessage : undefined,
+  });
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -98,52 +128,35 @@ export function handleApiError(error: unknown): NextResponse {
   console.error("[API Error]", error);
 
   if (error instanceof ApiError) {
-    return NextResponse.json(error.toJSON(), { status: error.statusCode });
+    return apiErrorResponse(error.toJSON());
   }
 
   if (error instanceof Error) {
     if (error.message.includes("API Key")) {
-      return NextResponse.json(
-        {
-          error: "ConfigurationError",
-          message: "AI 服务未正确配置",
-          statusCode: 500,
-          devMessage: error.message,
-        },
-        { status: 500 }
-      );
+      return apiErrorResponse({
+        error: "ConfigurationError",
+        message: "AI 服务未正确配置",
+        statusCode: 500,
+        devMessage: error.message,
+      });
     }
 
     if (error.name === "AbortError" || error.message.includes("timeout")) {
-      return NextResponse.json(
-        {
-          error: "TimeoutError",
-          message: "请求超时，请稍后再试",
-          statusCode: 504,
-        },
-        { status: 504 }
-      );
+      return apiErrorResponse({
+        error: "TimeoutError",
+        message: "请求超时，请稍后再试",
+        statusCode: 504,
+      });
     }
 
-    return NextResponse.json(
-      {
-        error: "InternalError",
-        message: "服务器内部错误",
-        statusCode: 500,
-        devMessage: process.env.NODE_ENV === "development" ? error.message : undefined,
-      },
-      { status: 500 }
-    );
+    return internalErrorResponse("服务器内部错误", error.message);
   }
 
-  return NextResponse.json(
-    {
-      error: "UnknownError",
-      message: "发生未知错误",
-      statusCode: 500,
-    },
-    { status: 500 }
-  );
+  return apiErrorResponse({
+    error: "UnknownError",
+    message: "发生未知错误",
+    statusCode: 500,
+  });
 }
 
 export function withErrorHandling<T extends (...args: Parameters<T>) => Promise<unknown>>(

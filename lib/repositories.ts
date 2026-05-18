@@ -19,18 +19,25 @@ import {
   finishDevSimulation,
   getActiveDevCrush,
   getDevActions,
+  getDevActionById,
   getDevGrowthMetrics,
   getDevMaterials,
   getDevMaterialsForCrush,
   getDevMemories,
+  getDevMessageById,
   getDevMessages,
   getDevMessagesForCrush,
+  getDevPracticeRunById,
   getDevProfileDraft,
+  getDevSessionById,
   getDevSuggestions,
+  getDevSuggestionById,
   getDevTraits,
   getDevVisualAssets,
   getOrCreateDevSession,
   getOrCreateDevVoiceProfile,
+  isDevCrushOwnedByUser,
+  markDevReferenceImageDeleted,
   resolveDevSuggestion,
   startDevSimulation,
   updateDevAction,
@@ -56,11 +63,17 @@ import {
   voiceProfiles,
 } from "@/db/schema";
 import {
+  deletePublicAssetWithRetry,
+  deleteStoredObjectWithRetry,
+} from "@/lib/asset-lifecycle";
+import {
   getImageGenerationService,
   type GeneratedVisualAssetInput,
 } from "@/lib/image-generation-service";
+import type { QuickLineAnalysisResult } from "@/lib/ai-output-schemas";
 import { getStorageService } from "@/lib/storage-service";
 import { getTtsService } from "@/lib/tts-service";
+import { ServiceUnavailableError } from "@/lib/errors";
 import type { VisualTheme } from "@/lib/visual-prompts";
 
 type ProfileFact = {
@@ -82,14 +95,7 @@ type AiProfileAnalysis = {
   emotionalTone?: string;
 };
 
-type QuickPracticeAnalysis = {
-  riskLevel: string;
-  possibleFeeling: string;
-  mainRisk: string;
-  suggestedLine: string;
-  recommendedTiming: string;
-  shouldSend: boolean;
-};
+type QuickPracticeAnalysis = QuickLineAnalysisResult;
 
 function asNumber(value: string | number | null | undefined) {
   if (value === null || value === undefined) {
@@ -465,41 +471,45 @@ async function addDbVisualAssets(
     )
     .returning();
 
-  if (input.referenceImageKey) {
-    const now = new Date();
-    const updated = await db
-      .update(onboardingMaterials)
-      .set({
-        retentionStatus: "deleted",
-        deletedAt: now,
-      })
-      .where(
-        and(
-          eq(onboardingMaterials.crushId, crushId),
-          eq(onboardingMaterials.materialType, "reference_image"),
-          eq(onboardingMaterials.retentionStatus, "temporary"),
-          eq(onboardingMaterials.storageUrl, input.referenceImageKey),
-        ),
-      )
-      .returning();
+  return inserted;
+}
 
-    if (updated.length > 0) {
-      const [profile] = await db
-        .select({ userId: crushProfiles.userId })
-        .from(crushProfiles)
-        .where(eq(crushProfiles.id, crushId))
-        .limit(1);
+async function markDbReferenceImageDeleted(crushId: string, referenceImageKey: string) {
+  const db = getDb();
+  const deletedAt = new Date();
+  const updated = await db
+    .update(onboardingMaterials)
+    .set({
+      retentionStatus: "deleted",
+      deletedAt,
+    })
+    .where(
+      and(
+        eq(onboardingMaterials.crushId, crushId),
+        eq(onboardingMaterials.materialType, "reference_image"),
+        eq(onboardingMaterials.retentionStatus, "temporary"),
+        eq(onboardingMaterials.storageUrl, referenceImageKey),
+      ),
+    )
+    .returning();
 
-      if (profile) {
-        await db.insert(auditEvents).values({
-          userId: profile.userId,
-          eventType: "image_deleted",
-        });
-      }
+  if (updated.length > 0) {
+    const [profile] = await db
+      .select({ userId: crushProfiles.userId })
+      .from(crushProfiles)
+      .where(eq(crushProfiles.id, crushId))
+      .limit(1);
+
+    if (profile) {
+      await db.insert(auditEvents).values({
+        userId: profile.userId,
+        eventType: "image_deleted",
+        createdAt: deletedAt,
+      });
     }
   }
 
-  return inserted;
+  return updated[0] ?? null;
 }
 
 async function getDbMessagesForCrush(crushId: string) {
@@ -512,6 +522,130 @@ async function getDbMessagesForCrush(crushId: string) {
   }
 
   return db.select().from(messages).where(inArray(messages.sessionId, sessionIds));
+}
+
+async function isCurrentUserOwnedCrush(crushId: string) {
+  const userId = await getCurrentUserId();
+
+  if (!hasDatabaseUrl()) {
+    return isDevCrushOwnedByUser(userId, crushId);
+  }
+
+  const [profile] = await getDb()
+    .select({ id: crushProfiles.id })
+    .from(crushProfiles)
+    .where(and(eq(crushProfiles.id, crushId), eq(crushProfiles.userId, userId)))
+    .limit(1);
+
+  return Boolean(profile);
+}
+
+async function getCurrentOwnedDraftById(draftId: string) {
+  if (!hasDatabaseUrl()) {
+    const draft = await getDevProfileDraft(draftId);
+    return draft && (await isCurrentUserOwnedCrush(draft.crushId)) ? draft : null;
+  }
+
+  const [draft] = await getDb().select().from(aiProfileDrafts).where(eq(aiProfileDrafts.id, draftId)).limit(1);
+  return draft && (await isCurrentUserOwnedCrush(draft.crushId)) ? mapDbDraft(draft) : null;
+}
+
+async function getCurrentOwnedSessionById(sessionId: string) {
+  const session = !hasDatabaseUrl()
+    ? await getDevSessionById(sessionId)
+    : (
+        await getDb()
+          .select()
+          .from(chatSessions)
+          .where(eq(chatSessions.id, sessionId))
+          .limit(1)
+      )[0] ?? null;
+
+  if (!session || !(await isCurrentUserOwnedCrush(session.crushId))) {
+    return null;
+  }
+
+  return session;
+}
+
+async function getCurrentOwnedActionById(actionId: string) {
+  const action = !hasDatabaseUrl()
+    ? await getDevActionById(actionId)
+    : (
+        await getDb()
+          .select()
+          .from(realActions)
+          .where(eq(realActions.id, actionId))
+          .limit(1)
+      )[0] ?? null;
+
+  if (!action || !(await isCurrentUserOwnedCrush(action.crushId))) {
+    return null;
+  }
+
+  return action;
+}
+
+async function getCurrentOwnedSuggestionById(suggestionId: string) {
+  if (!hasDatabaseUrl()) {
+    const suggestion = await getDevSuggestionById(suggestionId);
+    return suggestion && (await isCurrentUserOwnedCrush(suggestion.crushId)) ? suggestion : null;
+  }
+
+  const [suggestion] = await getDb()
+    .select()
+    .from(profileUpdateSuggestions)
+    .where(eq(profileUpdateSuggestions.id, suggestionId))
+    .limit(1);
+  return suggestion && (await isCurrentUserOwnedCrush(suggestion.crushId)) ? mapDbSuggestion(suggestion) : null;
+}
+
+async function getCurrentOwnedPracticeRunById(practiceRunId: string) {
+  const run = !hasDatabaseUrl()
+    ? await getDevPracticeRunById(practiceRunId)
+    : (
+        await getDb()
+          .select()
+          .from(practiceRuns)
+          .where(eq(practiceRuns.id, practiceRunId))
+          .limit(1)
+      )[0] ?? null;
+
+  if (!run || !(await isCurrentUserOwnedCrush(run.crushId))) {
+    return null;
+  }
+
+  return run;
+}
+
+async function getCurrentOwnedMessageById(messageId: string) {
+  const message = !hasDatabaseUrl()
+    ? await getDevMessageById(messageId)
+    : (
+        await getDb()
+          .select()
+          .from(messages)
+          .where(eq(messages.id, messageId))
+          .limit(1)
+      )[0] ?? null;
+
+  if (!message) {
+    return null;
+  }
+
+  const session = await getCurrentOwnedSessionById(message.sessionId);
+  return session ? message : null;
+}
+
+async function isCurrentOwnedMemorySource(sourceId: string) {
+  const [message, action, run, session] = await Promise.all([
+    getCurrentOwnedMessageById(sourceId),
+    getCurrentOwnedActionById(sourceId),
+    getCurrentOwnedPracticeRunById(sourceId),
+    getCurrentOwnedSessionById(sourceId),
+  ]);
+
+  return Boolean(message || action || run || session);
 }
 
 export async function confirmCurrentUserAge() {
@@ -710,17 +844,17 @@ export async function confirmCurrentDraft(
     interactionTemperature?: string;
   },
 ) {
+  const ownedDraft = await getCurrentOwnedDraftById(draftId);
+  if (!ownedDraft) {
+    return null;
+  }
+
   if (!hasDatabaseUrl()) {
     return confirmDevProfileDraft(draftId, input);
   }
 
   const db = getDb();
-  const [draftRow] = await db.select().from(aiProfileDrafts).where(eq(aiProfileDrafts.id, draftId)).limit(1);
-  if (!draftRow) {
-    return null;
-  }
-
-  const draft = mapDbDraft(draftRow);
+  const draft = ownedDraft;
   const now = new Date();
   const [profile] = await db
     .update(crushProfiles)
@@ -823,12 +957,7 @@ export async function getCurrentCrushProfileDetail() {
 }
 
 export async function getProfileDraftById(draftId: string) {
-  if (!hasDatabaseUrl()) {
-    return getDevProfileDraft(draftId);
-  }
-
-  const [draft] = await getDb().select().from(aiProfileDrafts).where(eq(aiProfileDrafts.id, draftId)).limit(1);
-  return draft ? mapDbDraft(draft) : null;
+  return getCurrentOwnedDraftById(draftId);
 }
 
 export async function generateCurrentCrushVisualAssets(input: {
@@ -858,13 +987,25 @@ export async function generateCurrentCrushVisualAssets(input: {
     ? await addDbVisualAssets(active.id, input, generatedAssets)
     : await addDevVisualAssets(active.id, input, generatedAssets);
 
+  let referenceImageDeleted = false;
   if (input.referenceImageKey) {
-    await getStorageService().deleteObject(input.referenceImageKey).catch((error) => {
+    const storage = getStorageService();
+    try {
+      await deleteStoredObjectWithRetry(storage, input.referenceImageKey);
+      await (hasDatabaseUrl()
+        ? markDbReferenceImageDeleted(active.id, input.referenceImageKey)
+        : markDevReferenceImageDeleted(active.id, input.referenceImageKey));
+      referenceImageDeleted = true;
+    } catch (error) {
       console.warn("[Storage] Failed to delete temporary reference image", error);
-    });
+      throw new ServiceUnavailableError(
+        "参考图清理未完成，请稍后重试。",
+        error instanceof Error ? error.message : undefined,
+      );
+    }
   }
 
-  return assets;
+  return { assets, referenceImageDeleted };
 }
 
 export async function generateCurrentCrushSceneAsset(input: {
@@ -991,6 +1132,11 @@ function buildMockCompanionReply(nickname: string, message: string) {
 }
 
 export async function attachMockVoiceToMessage(messageId: string) {
+  const ownedMessage = await getCurrentOwnedMessageById(messageId);
+  if (!ownedMessage) {
+    return null;
+  }
+
   const audioUrl = `/api/voice/mock?messageId=${encodeURIComponent(messageId)}`;
 
   if (!hasDatabaseUrl()) {
@@ -1011,6 +1157,11 @@ export async function attachVoiceToMessage(input: {
   text: string;
   speaker?: string | null;
 }) {
+  const ownedMessage = await getCurrentOwnedMessageById(input.messageId);
+  if (!ownedMessage) {
+    return null;
+  }
+
   const { profile: active } = await getCurrentUserActiveCrush();
 
   if (!active || !getServerEnv().TTS_API_KEY) {
@@ -1082,6 +1233,10 @@ export async function createCurrentMemory(input: {
   const { profile: active } = await getCurrentUserActiveCrush();
   if (!active) {
     throw new Error("No active Crush profile.");
+  }
+
+  if (input.sourceId && !(await isCurrentOwnedMemorySource(input.sourceId))) {
+    return null;
   }
 
   if (!hasDatabaseUrl()) {
@@ -1199,15 +1354,17 @@ export async function startCurrentSimulation(input: {
 }
 
 export async function sendCurrentSimulationMessage(sessionId: string, message: string) {
+  const ownedSession = await getCurrentOwnedSessionById(sessionId);
+  if (!ownedSession) {
+    return null;
+  }
+
   if (!hasDatabaseUrl()) {
     return addDevSimulationTurn(sessionId, message);
   }
 
   const db = getDb();
-  const [session] = await db.select().from(chatSessions).where(eq(chatSessions.id, sessionId)).limit(1);
-  if (!session) {
-    return null;
-  }
+  const session = ownedSession as typeof chatSessions.$inferSelect;
 
   const createdAt = new Date();
   const { crushReply, coachTip } = buildSimulationReply(message);
@@ -1243,15 +1400,17 @@ export async function sendCurrentSimulationMessage(sessionId: string, message: s
 }
 
 export async function finishCurrentSimulation(sessionId: string) {
+  const ownedSession = await getCurrentOwnedSessionById(sessionId);
+  if (!ownedSession) {
+    return null;
+  }
+
   if (!hasDatabaseUrl()) {
     return finishDevSimulation(sessionId);
   }
 
   const db = getDb();
-  const [session] = await db.select().from(chatSessions).where(eq(chatSessions.id, sessionId)).limit(1);
-  if (!session) {
-    return null;
-  }
+  const session = ownedSession as typeof chatSessions.$inferSelect;
 
   const now = new Date();
   await db
@@ -1280,6 +1439,10 @@ export async function createCurrentAction(input: {
   const { profile: active } = await getCurrentUserActiveCrush();
   if (!active) {
     throw new Error("No active Crush profile.");
+  }
+
+  if (input.practiceRunId && !(await getCurrentOwnedPracticeRunById(input.practiceRunId))) {
+    return null;
   }
 
   if (!hasDatabaseUrl()) {
@@ -1335,15 +1498,17 @@ export async function updateCurrentAction(
     feedbackText?: string | null;
   },
 ) {
+  const ownedAction = await getCurrentOwnedActionById(actionId);
+  if (!ownedAction) {
+    return null;
+  }
+
   if (!hasDatabaseUrl()) {
     return updateDevAction(actionId, input);
   }
 
   const db = getDb();
-  const [existing] = await db.select().from(realActions).where(eq(realActions.id, actionId)).limit(1);
-  if (!existing) {
-    return null;
-  }
+  const existing = ownedAction as typeof realActions.$inferSelect;
 
   const updatedAt = new Date();
   const nextExecutedAt = ["sent", "positive_response", "neutral_response", "cold_response"].includes(input.status)
@@ -1384,16 +1549,16 @@ export async function updateCurrentAction(
 }
 
 export async function resolveCurrentSuggestion(id: string, decision: "accepted" | "rejected") {
+  const ownedSuggestion = await getCurrentOwnedSuggestionById(id);
+  if (!ownedSuggestion) {
+    return null;
+  }
+
   if (!hasDatabaseUrl()) {
     return resolveDevSuggestion(id, decision);
   }
 
   const db = getDb();
-  const [existing] = await db.select().from(profileUpdateSuggestions).where(eq(profileUpdateSuggestions.id, id)).limit(1);
-  if (!existing) {
-    return null;
-  }
-
   const resolvedAt = new Date();
   const [suggestionRow] = await db
     .update(profileUpdateSuggestions)
@@ -1456,59 +1621,68 @@ export async function destroyCurrentCrush(confirmText: string) {
         getDevMessagesForCrush(active.id),
       ]);
 
-  await Promise.all([
-    ...assets.map((asset) =>
-      storage.deletePublicAssetByUrl(asset.storageUrl).catch((error) => {
-        console.warn("[Storage] Failed to delete persisted visual asset", error);
-      }),
+  const visualAssetUrls = [...new Set(assets.map((asset) => asset.storageUrl))];
+  const referenceImageKeys = [
+    ...new Set(
+      materialsForCrush
+        .filter((material) => material.materialType === "reference_image" && material.storageUrl)
+        .map((material) => material.storageUrl as string),
     ),
-    ...materialsForCrush
-      .filter((material) => material.materialType === "reference_image" && material.storageUrl)
-      .map((material) =>
-        storage.deleteObject(material.storageUrl as string).catch((error) => {
-          console.warn("[Storage] Failed to delete reference image", error);
-        }),
-      ),
-    ...crushMessages
-      .filter((message) => message.audioUrl)
-      .map((message) =>
-        storage.deletePublicAssetByUrl(message.audioUrl as string).catch((error) => {
-          console.warn("[Storage] Failed to delete persisted voice asset", error);
-        }),
-      ),
-  ]);
+  ];
+  const voiceAssetUrls = [
+    ...new Set(
+      crushMessages
+        .filter((message) => message.audioUrl)
+        .map((message) => message.audioUrl as string),
+    ),
+  ];
+  const cleanupTasks = [
+    ...visualAssetUrls.map((url) => ({
+      kind: "visual_asset",
+      run: () => deletePublicAssetWithRetry(storage, url),
+    })),
+    ...referenceImageKeys.map((key) => ({
+      kind: "reference_image",
+      run: () => deleteStoredObjectWithRetry(storage, key),
+    })),
+    ...voiceAssetUrls.map((url) => ({
+      kind: "voice_asset",
+      run: () => deletePublicAssetWithRetry(storage, url),
+    })),
+  ];
+  const cleanupResults = await Promise.allSettled(cleanupTasks.map((task) => task.run()));
+  const cleanupFailures = cleanupResults.flatMap((result, index) =>
+    result.status === "rejected"
+      ? [{ kind: cleanupTasks[index]?.kind ?? "unknown", reason: result.reason }]
+      : [],
+  );
+
+  if (cleanupFailures.length > 0) {
+    console.warn("[Storage] Crush destroy aborted because asset cleanup failed", {
+      attempted: cleanupTasks.length,
+      failed: cleanupFailures.length,
+      failedKinds: cleanupFailures.map((failure) => failure.kind),
+    });
+    throw new ServiceUnavailableError(
+      "素材清理未完成，请稍后重试。",
+      `Failed to delete ${cleanupFailures.length} of ${cleanupTasks.length} stored assets before destroy.`,
+    );
+  }
 
   if (!hasDatabaseUrl()) {
     return destroyDevCrush(active.userId, active.id);
   }
 
   const db = getDb();
-  const sessions = await db.select({ id: chatSessions.id }).from(chatSessions).where(eq(chatSessions.crushId, active.id));
-  const sessionIds = sessions.map((session) => session.id);
-
-  await Promise.all([
-    db.delete(crushTraits).where(eq(crushTraits.crushId, active.id)),
-    db.delete(growthMetrics).where(eq(growthMetrics.crushId, active.id)),
-    db.delete(onboardingMaterials).where(eq(onboardingMaterials.crushId, active.id)),
-    db.delete(aiProfileDrafts).where(eq(aiProfileDrafts.crushId, active.id)),
-    db.delete(visualAssets).where(eq(visualAssets.crushId, active.id)),
-    db.delete(voiceProfiles).where(eq(voiceProfiles.crushId, active.id)),
-    db.delete(practiceRuns).where(eq(practiceRuns.crushId, active.id)),
-    db.delete(realActions).where(eq(realActions.crushId, active.id)),
-    db.delete(profileUpdateSuggestions).where(eq(profileUpdateSuggestions.crushId, active.id)),
-    db.delete(memories).where(eq(memories.crushId, active.id)),
-    ...(sessionIds.length ? [db.delete(messages).where(inArray(messages.sessionId, sessionIds))] : []),
-    db.delete(chatSessions).where(eq(chatSessions.crushId, active.id)),
+  const destroyedAt = new Date();
+  await db.batch([
+    db.insert(auditEvents).values({
+      userId: active.userId,
+      eventType: "crush_destroyed",
+      createdAt: destroyedAt,
+    }),
+    db.delete(crushProfiles).where(eq(crushProfiles.id, active.id)),
   ]);
 
-  const [profile] = await db
-    .update(crushProfiles)
-    .set({
-      status: "destroyed",
-      updatedAt: new Date(),
-    })
-    .where(eq(crushProfiles.id, active.id))
-    .returning();
-
-  return profile;
+  return { destroyedAt: destroyedAt.toISOString() };
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { internalErrorResponse } from "@/lib/errors";
 import { analyzeCurrentCrushProfile } from "@/lib/repositories";
 
 export async function POST() {
@@ -16,9 +17,9 @@ export async function POST() {
   } catch (error) {
     console.error("[onboarding/analyze] failed to generate draft", error);
 
-    return NextResponse.json(
-      { error: "AI 建档草稿生成失败，请稍后重试。" },
-      { status: 500 },
+    return internalErrorResponse(
+      "AI 建档草稿生成失败，请稍后重试。",
+      error instanceof Error ? error.message : undefined,
     );
   }
 }

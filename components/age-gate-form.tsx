@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
+import { StatePanel } from "@/components/state-panel";
+import { getClientErrorMessage, readApiResponse } from "@/lib/api-client";
 
 export function AgeGateForm() {
   const router = useRouter();
@@ -18,20 +20,21 @@ export function AgeGateForm() {
 
     setError(null);
     startTransition(async () => {
-      const response = await fetch("/api/onboarding/age-confirm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirmed: true }),
-      });
+      try {
+        await readApiResponse(
+          await fetch("/api/onboarding/age-confirm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ confirmed: true }),
+          }),
+          "确认失败，请稍后重试。",
+        );
 
-      if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { error?: string } | null;
-        setError(data?.error ?? "确认失败，请稍后重试。");
-        return;
+        router.push("/onboarding/create");
+        router.refresh();
+      } catch (nextError) {
+        setError(getClientErrorMessage(nextError, "确认失败，请稍后重试。"));
       }
-
-      router.push("/onboarding/create");
-      router.refresh();
     });
   }
 
@@ -59,7 +62,7 @@ export function AgeGateForm() {
         </span>
       </label>
 
-      {error ? <p className="mt-4 text-sm font-semibold text-blush-700">{error}</p> : null}
+      {error ? <div className="mt-4"><StatePanel tone="error" title="还不能继续" description={error} /></div> : null}
 
       <button
         className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-full bg-ink-900 px-6 text-base font-bold text-white shadow-lg shadow-blush-200 transition hover:-translate-y-0.5 hover:bg-blush-700 disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:translate-y-0"

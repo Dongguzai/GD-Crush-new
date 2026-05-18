@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { ClipboardCheck, MessagesSquare, Save, Send } from "lucide-react";
+import { StatePanel } from "@/components/state-panel";
+import { getClientErrorMessage, readApiResponse } from "@/lib/api-client";
 
 type QuickResult = {
   practiceRunId: string;
@@ -18,48 +20,116 @@ export function PracticeWorkbench() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [simulationMessages, setSimulationMessages] = useState<string[]>([]);
   const [simulationInput, setSimulationInput] = useState("");
+  const [busyLabel, setBusyLabel] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{
+    tone: "error" | "success";
+    title: string;
+    description: string;
+    retry?: () => void;
+  } | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function runQuick() {
-    startTransition(async () => {
-      const response = await fetch("/api/practice/quick-line", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenarioType: "invite", sendContext: "wechat", userLine: line }),
+    if (!line.trim()) {
+      setFeedback({
+        tone: "error",
+        title: "先写一句想测试的话",
+        description: "空白消息无法判断风险，也没法给你更稳的表达。",
       });
-      setResult((await response.json()) as QuickResult);
+      return;
+    }
+
+    setFeedback(null);
+    setBusyLabel("正在评估这句话...");
+    startTransition(async () => {
+      try {
+        const nextResult = await readApiResponse<QuickResult>(
+          await fetch("/api/practice/quick-line", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scenarioType: "invite", sendContext: "wechat", userLine: line }),
+          }),
+          "一句话测试失败，请稍后重试。",
+        );
+        setResult(nextResult);
+      } catch (error) {
+        setFeedback({
+          tone: "error",
+          title: "一句话测试没有完成",
+          description: getClientErrorMessage(error, "一句话测试失败，请稍后重试。"),
+          retry: runQuick,
+        });
+      } finally {
+        setBusyLabel(null);
+      }
     });
   }
 
   function saveAction() {
     if (!result) return;
+    setFeedback(null);
+    setBusyLabel("正在保存为现实行动...");
     startTransition(async () => {
-      await fetch("/api/actions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          practiceRunId: result.practiceRunId,
-          title: "一句话测试行动",
-          suggestedMessage: result.suggestedLine,
-        }),
-      });
+      try {
+        await readApiResponse(
+          await fetch("/api/actions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              practiceRunId: result.practiceRunId,
+              title: "一句话测试行动",
+              suggestedMessage: result.suggestedLine,
+            }),
+          }),
+          "保存现实行动失败，请重试。",
+        );
+        setFeedback({
+          tone: "success",
+          title: "已保存为现实行动",
+          description: "你可以稍后去行动页记录真实反馈。",
+        });
+      } catch (error) {
+        setFeedback({
+          tone: "error",
+          title: "行动还没保存",
+          description: getClientErrorMessage(error, "保存现实行动失败，请重试。"),
+          retry: saveAction,
+        });
+      } finally {
+        setBusyLabel(null);
+      }
     });
   }
 
   function startSimulation() {
+    setFeedback(null);
+    setBusyLabel("正在建立模拟场景...");
     startTransition(async () => {
-      const response = await fetch("/api/practice/full-simulation/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scenarioType: "apology",
-          goal: "解释误会",
-          background: "我想练习一段更克制的表达。",
-        }),
-      });
-      const data = (await response.json()) as { sessionId: string };
-      setSessionId(data.sessionId);
-      setSimulationMessages(["模拟已开始。"]);
+      try {
+        const data = await readApiResponse<{ sessionId: string }>(
+          await fetch("/api/practice/full-simulation/start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              scenarioType: "apology",
+              goal: "解释误会",
+              background: "我想练习一段更克制的表达。",
+            }),
+          }),
+          "完整模拟启动失败，请稍后重试。",
+        );
+        setSessionId(data.sessionId);
+        setSimulationMessages(["模拟已开始。"]);
+      } catch (error) {
+        setFeedback({
+          tone: "error",
+          title: "完整模拟还没开始",
+          description: getClientErrorMessage(error, "完整模拟启动失败，请稍后重试。"),
+          retry: startSimulation,
+        });
+      } finally {
+        setBusyLabel(null);
+      }
     });
   }
 
@@ -67,41 +137,80 @@ export function PracticeWorkbench() {
     if (!sessionId || !simulationInput.trim()) return;
     const message = simulationInput;
     setSimulationInput("");
+    setFeedback(null);
+    setBusyLabel("Crush 正在回应...");
     startTransition(async () => {
-      const response = await fetch("/api/practice/full-simulation/message", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, message }),
-      });
-      const data = (await response.json()) as { crushReply: string; coachTip: { advice: string } };
-      setSimulationMessages((current) => [
-        ...current,
-        `你：${message}`,
-        `Crush：${data.crushReply}`,
-        `Coach：${data.coachTip.advice}`,
-      ]);
+      try {
+        const data = await readApiResponse<{ crushReply: string; coachTip: { advice: string } }>(
+          await fetch("/api/practice/full-simulation/message", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId, message }),
+          }),
+          "模拟消息发送失败，请重试。",
+        );
+        setSimulationMessages((current) => [
+          ...current,
+          `你：${message}`,
+          `Crush：${data.crushReply}`,
+          `Coach：${data.coachTip.advice}`,
+        ]);
+      } catch (error) {
+        setSimulationInput(message);
+        setFeedback({
+          tone: "error",
+          title: "这句还没送出去",
+          description: getClientErrorMessage(error, "模拟消息发送失败，请重试。"),
+          retry: sendSimulation,
+        });
+      } finally {
+        setBusyLabel(null);
+      }
     });
   }
 
   function finishSimulation() {
     if (!sessionId) return;
+    setFeedback(null);
+    setBusyLabel("正在生成复盘并保存行动...");
     startTransition(async () => {
-      const response = await fetch("/api/practice/full-simulation/finish", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId }),
-      });
-      const data = (await response.json()) as { suggestedAction: { id: string; suggestedLine: string } };
-      await fetch("/api/actions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          practiceRunId: data.suggestedAction.id,
-          title: "完整演练后的现实行动",
-          suggestedMessage: data.suggestedAction.suggestedLine,
-        }),
-      });
-      setSimulationMessages((current) => [...current, "复盘已生成，并保存为现实行动。"]);
+      try {
+        const data = await readApiResponse<{ suggestedAction: { id: string; suggestedLine: string } }>(
+          await fetch("/api/practice/full-simulation/finish", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId }),
+          }),
+          "复盘生成失败，请稍后重试。",
+        );
+        await readApiResponse(
+          await fetch("/api/actions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              practiceRunId: data.suggestedAction.id,
+              title: "完整演练后的现实行动",
+              suggestedMessage: data.suggestedAction.suggestedLine,
+            }),
+          }),
+          "复盘已生成，但保存现实行动失败。",
+        );
+        setSimulationMessages((current) => [...current, "复盘已生成，并保存为现实行动。"]);
+        setFeedback({
+          tone: "success",
+          title: "完整演练已收束",
+          description: "复盘和现实行动都已经保存。",
+        });
+      } catch (error) {
+        setFeedback({
+          tone: "error",
+          title: "结束流程没有完成",
+          description: getClientErrorMessage(error, "复盘生成失败，请稍后重试。"),
+          retry: finishSimulation,
+        });
+      } finally {
+        setBusyLabel(null);
+      }
     });
   }
 
@@ -134,6 +243,22 @@ export function PracticeWorkbench() {
       </section>
 
       <section className="rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-2xl shadow-blush-200/40 backdrop-blur md:p-7">
+        {busyLabel ? (
+          <div className="mb-4">
+            <StatePanel tone="loading" title="处理中" description={busyLabel} />
+          </div>
+        ) : null}
+        {feedback ? (
+          <div className="mb-4">
+            <StatePanel
+              tone={feedback.tone}
+              title={feedback.title}
+              description={feedback.description}
+              actionLabel={feedback.retry ? "重试" : undefined}
+              onAction={feedback.retry}
+            />
+          </div>
+        ) : null}
         {tab === "quick" ? (
           <div className="grid gap-4">
             <textarea
@@ -167,7 +292,9 @@ export function PracticeWorkbench() {
                   保存为现实行动
                 </button>
               </div>
-            ) : null}
+            ) : (
+              <StatePanel tone="empty" title="还没有测试结果" description="先放入一句你想发的话，系统会给出风险判断和更稳表达。" />
+            )}
           </div>
         ) : (
           <div className="grid gap-4">
@@ -181,11 +308,15 @@ export function PracticeWorkbench() {
               开始完整模拟
             </button>
             <div className="min-h-64 rounded-3xl bg-blush-50 p-4 text-sm leading-7 text-ink-700">
-              {simulationMessages.map((item, index) => (
-                <p key={`${item}-${index}`} className="mb-2 rounded-2xl bg-white/75 p-3">
-                  {item}
-                </p>
-              ))}
+              {simulationMessages.length ? (
+                simulationMessages.map((item, index) => (
+                  <p key={`${item}-${index}`} className="mb-2 rounded-2xl bg-white/75 p-3">
+                    {item}
+                  </p>
+                ))
+              ) : (
+                <StatePanel tone="empty" title="模拟还没开始" description="先启动一轮完整对话，再把你想练习的表达逐句放进来。" />
+              )}
             </div>
             <div className="flex gap-2">
               <input
@@ -194,11 +325,11 @@ export function PracticeWorkbench() {
                 value={simulationInput}
                 onChange={(event) => setSimulationInput(event.target.value)}
               />
-              <button className="h-12 w-12 rounded-full bg-ink-900 text-white" type="button" onClick={sendSimulation}>
+              <button className="h-12 w-12 rounded-full bg-ink-900 text-white disabled:opacity-60" disabled={isPending || !sessionId} type="button" onClick={sendSimulation}>
                 <Send className="mx-auto" aria-hidden="true" size={18} />
               </button>
             </div>
-            <button className="rounded-full bg-white px-5 py-3 font-bold text-ink-900" type="button" onClick={finishSimulation}>
+            <button className="rounded-full bg-white px-5 py-3 font-bold text-ink-900 disabled:opacity-60" disabled={isPending || !sessionId} type="button" onClick={finishSimulation}>
               结束并保存复盘行动
             </button>
           </div>

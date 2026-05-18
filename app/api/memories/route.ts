@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { badRequestResponse, handleApiError, notFoundResponse } from "@/lib/errors";
 import { createCurrentMemory, getCurrentMemories } from "@/lib/repositories";
 
 const requestSchema = z.object({
   sourceType: z.string().min(1),
-  sourceId: z.string().optional().nullable(),
+  sourceId: z.string().uuid().optional().nullable(),
   title: z.string().min(1).max(80),
   excerpt: z.string().max(500).optional().nullable(),
   imageUrl: z.string().optional().nullable(),
@@ -12,18 +13,29 @@ const requestSchema = z.object({
 });
 
 export async function GET() {
-  const memories = await getCurrentMemories();
-  return NextResponse.json({ memories });
+  try {
+    const memories = await getCurrentMemories();
+    return NextResponse.json({ memories });
+  } catch (error) {
+    return handleApiError(error);
+  }
 }
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => null);
-  const parsed = requestSchema.safeParse(body);
+  try {
+    const body = await request.json().catch(() => null);
+    const parsed = requestSchema.safeParse(body);
 
-  if (!parsed.success) {
-    return NextResponse.json({ error: "回忆参数不正确。", issues: parsed.error.flatten() }, { status: 400 });
+    if (!parsed.success) {
+      return badRequestResponse("回忆参数不正确。", parsed.error.flatten());
+    }
+
+    const memory = await createCurrentMemory(parsed.data);
+    if (!memory) {
+      return notFoundResponse("回忆来源不存在。");
+    }
+    return NextResponse.json({ memory });
+  } catch (error) {
+    return handleApiError(error);
   }
-
-  const memory = await createCurrentMemory(parsed.data);
-  return NextResponse.json({ memory });
 }

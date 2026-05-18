@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { Mic, Play, Send, Star } from "lucide-react";
+import { StatePanel } from "@/components/state-panel";
+import { getClientErrorMessage, readApiResponse } from "@/lib/api-client";
 
 type Message = {
   id: string;
@@ -65,6 +67,14 @@ export function CompanionChat() {
   const [autoPlay, setAutoPlay] = useState(true);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [voiceMessage, setVoiceMessage] = useState<string | null>(null);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [chatNotice, setChatNotice] = useState<{
+    tone: "error" | "success";
+    title: string;
+    description: string;
+    retry?: () => void;
+  } | null>(null);
   const [isPending, startTransition] = useTransition();
   const latestAudioRef = useRef<HTMLAudioElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -73,10 +83,52 @@ export function CompanionChat() {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const audioChunksRef = useRef<Float32Array[]>([]);
 
+  const loadMessages = useCallback(async () => {
+    try {
+      const data = await readApiResponse<{ messages: Message[] }>(
+        await fetch("/api/chat/companion"),
+        "聊天记录加载失败，请稍后重试。",
+      );
+      setMessages(data.messages ?? []);
+      setLoadState("ready");
+    } catch (error) {
+      setLoadState("error");
+      setLoadError(getClientErrorMessage(error, "聊天记录加载失败，请稍后重试。"));
+    }
+  }, []);
+
+  function retryLoadMessages() {
+    setLoadState("loading");
+    setLoadError(null);
+    void loadMessages();
+  }
+
   useEffect(() => {
+    let cancelled = false;
+
     fetch("/api/chat/companion")
-      .then((response) => response.json() as Promise<{ messages: Message[] }>)
-      .then((data) => setMessages(data.messages ?? []));
+      .then((response) =>
+        readApiResponse<{ messages: Message[] }>(
+          response,
+          "聊天记录加载失败，请稍后重试。",
+        ),
+      )
+      .then((data) => {
+        if (!cancelled) {
+          setMessages(data.messages ?? []);
+          setLoadState("ready");
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setLoadState("error");
+          setLoadError(getClientErrorMessage(error, "聊天记录加载失败，请稍后重试。"));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -88,32 +140,70 @@ export function CompanionChat() {
     };
   }, []);
 
+  function synthesizeVoice(message: Message) {
+    startTransition(async () => {
+      try {
+        const voice = await readApiResponse<{ audioUrl: string }>(
+          await fetch("/api/voice/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ messageId: message.id, text: message.content }),
+          }),
+          "语音生成失败，请稍后重试。",
+        );
+        setMessages((current) =>
+          current.map((item) => (item.id === message.id ? { ...item, audioUrl: voice.audioUrl } : item)),
+        );
+        setChatNotice({
+          tone: "success",
+          title: "语音已补上",
+          description: "这条回复现在可以播放了。",
+        });
+
+        if (autoPlay) {
+          setTimeout(() => {
+            latestAudioRef.current?.play().catch(() => undefined);
+          }, 80);
+        }
+      } catch (error) {
+        setChatNotice({
+          tone: "error",
+          title: "文字已送达，但语音暂时不可用",
+          description: getClientErrorMessage(error, "语音生成失败，请稍后重试。"),
+          retry: () => synthesizeVoice(message),
+        });
+      }
+    });
+  }
+
   function send(message: string, inputMode: "text" | "voice" = "text") {
-    if (!message.trim()) {
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage) {
       return;
     }
+
+    setChatNotice(null);
     setText("");
     startTransition(async () => {
-      const response = await fetch("/api/chat/companion", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, inputMode }),
-      });
-      const data = (await response.json()) as { userMessage: Message; crushMessage: Message };
-      let crushMessage = data.crushMessage;
-
-      const voice = await fetch("/api/voice/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messageId: crushMessage.id, text: crushMessage.content }),
-      }).then((voiceResponse) => voiceResponse.json() as Promise<{ audioUrl: string }>);
-      crushMessage = { ...crushMessage, audioUrl: voice.audioUrl };
-      setMessages((current) => [...current, data.userMessage, crushMessage]);
-
-      if (autoPlay) {
-        setTimeout(() => {
-          latestAudioRef.current?.play().catch(() => undefined);
-        }, 80);
+      try {
+        const data = await readApiResponse<{ userMessage: Message; crushMessage: Message }>(
+          await fetch("/api/chat/companion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: trimmedMessage, inputMode }),
+          }),
+          "消息发送失败，请稍后重试。",
+        );
+        setMessages((current) => [...current, data.userMessage, data.crushMessage]);
+        synthesizeVoice(data.crushMessage);
+      } catch (error) {
+        setText(trimmedMessage);
+        setChatNotice({
+          tone: "error",
+          title: "这句话还没发出去",
+          description: getClientErrorMessage(error, "消息发送失败，请稍后重试。"),
+          retry: () => send(trimmedMessage, inputMode),
+        });
       }
     });
   }
@@ -182,31 +272,29 @@ export function CompanionChat() {
       const formData = new FormData();
       formData.append("file", audioBlob, "voice-input.wav");
 
-      const uploadResponse = await fetch("/api/uploads/voice-input", {
-        method: "POST",
-        body: formData,
-      });
-      const uploadData = (await uploadResponse.json()) as {
-        temporaryObjectKey?: string;
-        message?: string;
-      };
+      const uploadData = await readApiResponse<{ temporaryObjectKey?: string }>(
+        await fetch("/api/uploads/voice-input", {
+          method: "POST",
+          body: formData,
+        }),
+        "录音上传失败。",
+      );
 
-      if (!uploadResponse.ok || !uploadData.temporaryObjectKey) {
-        throw new Error(uploadData.message ?? "录音上传失败。");
+      if (!uploadData.temporaryObjectKey) {
+        throw new Error("录音上传失败。");
       }
 
-      const sttResponse = await fetch("/api/voice/stt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audioObjectKey: uploadData.temporaryObjectKey }),
-      });
-      const sttData = (await sttResponse.json()) as {
-        text?: string;
-        message?: string;
-      };
+      const sttData = await readApiResponse<{ text?: string }>(
+        await fetch("/api/voice/stt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ audioObjectKey: uploadData.temporaryObjectKey }),
+        }),
+        "语音转文字失败。",
+      );
 
-      if (!sttResponse.ok || !sttData.text) {
-        throw new Error(sttData.message ?? "语音转文字失败。");
+      if (!sttData.text) {
+        throw new Error("语音转文字失败。");
       }
 
       const transcript = sttData.text;
@@ -234,18 +322,36 @@ export function CompanionChat() {
   }
 
   function favorite(message: Message) {
+    setChatNotice(null);
     startTransition(async () => {
-      await fetch("/api/memories", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sourceType: "chat_favorite",
-          sourceId: message.id,
-          title: "收藏对白",
-          excerpt: message.content,
-          rewardJson: { virtualIntimacy: 5, memoryFragments: 1 },
-        }),
-      });
+      try {
+        await readApiResponse(
+          await fetch("/api/memories", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sourceType: "chat_favorite",
+              sourceId: message.id,
+              title: "收藏对白",
+              excerpt: message.content,
+              rewardJson: { virtualIntimacy: 5, memoryFragments: 1 },
+            }),
+          }),
+          "收藏失败，请稍后重试。",
+        );
+        setChatNotice({
+          tone: "success",
+          title: "已收藏为回忆",
+          description: "这段对白已经放进轻量回忆册。",
+        });
+      } catch (error) {
+        setChatNotice({
+          tone: "error",
+          title: "这条回忆还没收藏",
+          description: getClientErrorMessage(error, "收藏失败，请稍后重试。"),
+          retry: () => favorite(message),
+        });
+      }
     });
   }
 
@@ -268,8 +374,27 @@ export function CompanionChat() {
       </div>
 
       <div className="flex flex-1 flex-col gap-3 overflow-hidden rounded-[2rem] border border-white/70 bg-white/65 p-4 shadow-2xl shadow-blush-200/40 backdrop-blur">
+        {chatNotice ? (
+          <StatePanel
+            tone={chatNotice.tone}
+            title={chatNotice.title}
+            description={chatNotice.description}
+            actionLabel={chatNotice.retry ? "重试" : undefined}
+            onAction={chatNotice.retry}
+          />
+        ) : null}
         <div className="flex-1 space-y-3 overflow-y-auto pr-1">
-          {messages.length ? (
+          {loadState === "loading" ? (
+            <StatePanel tone="loading" title="正在加载聊天记录" description="把最近的陪伴消息整理出来。" />
+          ) : loadState === "error" ? (
+            <StatePanel
+              tone="error"
+              title="聊天记录暂时没加载出来"
+              description={loadError ?? "聊天记录加载失败，请稍后重试。"}
+              actionLabel="重新加载"
+              onAction={retryLoadMessages}
+            />
+          ) : messages.length ? (
             messages.map((message, index) => (
               <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div
@@ -292,8 +417,13 @@ export function CompanionChat() {
                         className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blush-50 text-blush-700"
                         type="button"
                         onClick={() => {
-                          const audio = new Audio(message.audioUrl ?? "/api/voice/mock");
-                          audio.play().catch(() => undefined);
+                          if (message.audioUrl) {
+                            const audio = new Audio(message.audioUrl);
+                            audio.play().catch(() => undefined);
+                            return;
+                          }
+
+                          synthesizeVoice(message);
                         }}
                         aria-label="播放语音"
                       >
@@ -346,7 +476,7 @@ export function CompanionChat() {
           />
           <button
             className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink-900 text-white disabled:opacity-50"
-            disabled={isPending || voiceState !== "idle"}
+            disabled={isPending || voiceState !== "idle" || loadState !== "ready"}
             type="button"
             onClick={() => send(text)}
             aria-label="发送"

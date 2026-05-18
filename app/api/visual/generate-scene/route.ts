@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { handleApiError } from "@/lib/errors";
+import { badRequestResponse, handleApiError } from "@/lib/errors";
 import { generateCurrentCrushSceneAsset } from "@/lib/repositories";
 
 const requestSchema = z.object({
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     const parsed = requestSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json({ error: "场景生成参数不正确。", issues: parsed.error.flatten() }, { status: 400 });
+      return badRequestResponse("场景生成参数不正确。", parsed.error.flatten());
     }
 
     const asset = await generateCurrentCrushSceneAsset(parsed.data);
@@ -24,4 +24,3 @@ export async function POST(request: Request) {
     return handleApiError(error);
   }
 }
-

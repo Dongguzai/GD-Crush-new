@@ -198,7 +198,9 @@ type DevStoreData = {
   memories: DevMemory[];
 };
 
-const storePath = join(process.cwd(), ".data", "dev-store.json");
+const storeFileName =
+  process.env.DEV_STORE_FILE_NAME?.replace(/[^a-zA-Z0-9._-]/g, "-") ?? "dev-store.json";
+const storePath = join(process.cwd(), ".data", storeFileName);
 
 const emptyStore = (): DevStoreData => ({
   users: [],
@@ -479,6 +481,11 @@ export async function getDevProfileDraft(draftId: string) {
   return data.aiProfileDrafts.find((draft) => draft.id === draftId) ?? null;
 }
 
+export async function isDevCrushOwnedByUser(userId: string, crushId: string) {
+  const data = await readStore();
+  return data.crushProfiles.some((profile) => profile.id === crushId && profile.userId === userId);
+}
+
 export async function confirmDevProfileDraft(
   draftId: string,
   input: {
@@ -603,26 +610,32 @@ export async function addDevVisualAssets(
   }));
 
   data.visualAssets.push(...assets);
+  await writeStore(data);
+  return assets;
+}
+
+export async function markDevReferenceImageDeleted(crushId: string, referenceImageKey: string) {
+  const data = await readStore();
+  const deletedAt = now();
   const material = data.onboardingMaterials.find(
     (item) =>
       item.crushId === crushId &&
       item.materialType === "reference_image" &&
       item.retentionStatus === "temporary" &&
-      input.referenceImageKey &&
-      item.storageUrl === input.referenceImageKey,
+      item.storageUrl === referenceImageKey,
   );
   if (material) {
     material.retentionStatus = "deleted";
-    material.deletedAt = createdAt;
+    material.deletedAt = deletedAt;
     data.auditEvents.push({
       id: crypto.randomUUID(),
       userId: data.crushProfiles.find((profile) => profile.id === crushId)?.userId ?? "unknown",
       eventType: "image_deleted",
-      createdAt,
+      createdAt: deletedAt,
     });
   }
   await writeStore(data);
-  return assets;
+  return material ?? null;
 }
 
 export async function getDevVisualAssets(crushId: string) {
@@ -664,6 +677,16 @@ export async function getOrCreateDevSession(crushId: string, sessionType: string
 export async function getDevMessages(sessionId: string) {
   const data = await readStore();
   return data.messages.filter((message) => message.sessionId === sessionId);
+}
+
+export async function getDevSessionById(sessionId: string) {
+  const data = await readStore();
+  return data.chatSessions.find((session) => session.id === sessionId) ?? null;
+}
+
+export async function getDevMessageById(messageId: string) {
+  const data = await readStore();
+  return data.messages.find((message) => message.id === messageId) ?? null;
 }
 
 export async function getDevMessagesForCrush(crushId: string) {
@@ -844,6 +867,11 @@ export async function createDevQuickPractice(
   return run;
 }
 
+export async function getDevPracticeRunById(practiceRunId: string) {
+  const data = await readStore();
+  return data.practiceRuns.find((run) => run.id === practiceRunId) ?? null;
+}
+
 export async function startDevSimulation(input: { crushId: string; scenarioType: string; goal: string; background: string }) {
   const data = await readStore();
   const createdAt = now();
@@ -972,6 +1000,11 @@ export async function getDevActions(crushId: string) {
   return data.realActions.filter((action) => action.crushId === crushId);
 }
 
+export async function getDevActionById(actionId: string) {
+  const data = await readStore();
+  return data.realActions.find((action) => action.id === actionId) ?? null;
+}
+
 export async function updateDevAction(actionId: string, input: { status: string; feedbackText?: string | null }) {
   const data = await readStore();
   const action = data.realActions.find((item) => item.id === actionId);
@@ -1012,6 +1045,11 @@ export async function updateDevAction(actionId: string, input: { status: string;
 export async function getDevSuggestions(crushId: string) {
   const data = await readStore();
   return data.profileUpdateSuggestions.filter((suggestion) => suggestion.crushId === crushId);
+}
+
+export async function getDevSuggestionById(suggestionId: string) {
+  const data = await readStore();
+  return data.profileUpdateSuggestions.find((suggestion) => suggestion.id === suggestionId) ?? null;
 }
 
 export async function resolveDevSuggestion(id: string, decision: "accepted" | "rejected") {
@@ -1056,8 +1094,8 @@ export async function destroyDevCrush(userId: string, crushId: string) {
   if (!profile) {
     return null;
   }
-  profile.status = "destroyed";
-  profile.updatedAt = now();
+  const destroyedAt = now();
+  data.crushProfiles = data.crushProfiles.filter((item) => item.id !== crushId);
   data.crushTraits = data.crushTraits.filter((item) => item.crushId !== crushId);
   data.growthMetrics = data.growthMetrics.filter((item) => item.crushId !== crushId);
   data.onboardingMaterials = data.onboardingMaterials.filter((item) => item.crushId !== crushId);
@@ -1075,9 +1113,8 @@ export async function destroyDevCrush(userId: string, crushId: string) {
     id: crypto.randomUUID(),
     userId,
     eventType: "crush_destroyed",
-    metadataJson: { crushId },
-    createdAt: profile.updatedAt,
+    createdAt: destroyedAt,
   });
   await writeStore(data);
-  return profile;
+  return { destroyedAt };
 }

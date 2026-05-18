@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { handleApiError } from "@/lib/errors";
+import { badRequestResponse, handleApiError } from "@/lib/errors";
 import { generateCurrentCrushVisualAssets } from "@/lib/repositories";
 
 const requestSchema = z.object({
   theme: z.enum(["sunny_campus", "city_healing", "dream_otome"]),
   visualTags: z.record(z.string(), z.unknown()).default({}),
-  referenceImageKey: z.string().min(1).optional(),
+  referenceImageKey: z.string().startsWith("tmp/reference/").optional(),
 });
 
 export async function POST(request: Request) {
@@ -15,10 +15,10 @@ export async function POST(request: Request) {
     const parsed = requestSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json({ error: "角色生成参数不正确。", issues: parsed.error.flatten() }, { status: 400 });
+      return badRequestResponse("角色生成参数不正确。", parsed.error.flatten());
     }
 
-    const assets = await generateCurrentCrushVisualAssets(parsed.data);
+    const { assets, referenceImageDeleted } = await generateCurrentCrushVisualAssets(parsed.data);
     const byType = Object.fromEntries(
       assets.map((asset) => [asset.expression ?? asset.assetType, asset.storageUrl]),
     );
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
         happyUrl: byType.happy,
         shyUrl: byType.shy,
       },
-      referenceImageDeleted: Boolean(parsed.data.referenceImageKey),
+      referenceImageDeleted,
     });
   } catch (error) {
     return handleApiError(error);

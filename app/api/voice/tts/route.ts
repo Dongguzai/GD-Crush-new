@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { handleApiError } from "@/lib/errors";
+import { badRequestResponse, handleApiError, notFoundResponse } from "@/lib/errors";
 import { attachVoiceToMessage, getCurrentVoiceProfile } from "@/lib/repositories";
 
 const requestSchema = z.object({
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     const parsed = requestSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json({ error: "语音生成参数不正确。" }, { status: 400 });
+      return badRequestResponse("语音生成参数不正确。");
     }
 
     const voice = await getCurrentVoiceProfile();
@@ -23,6 +23,10 @@ export async function POST(request: Request) {
       text: parsed.data.text,
       speaker: voice?.providerVoiceId,
     });
+
+    if (!result) {
+      return notFoundResponse("消息不存在。");
+    }
 
     return NextResponse.json({
       audioUrl: result.message?.audioUrl ?? `/api/voice/mock?messageId=${parsed.data.messageId}`,

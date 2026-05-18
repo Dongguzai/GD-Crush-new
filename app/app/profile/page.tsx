@@ -1,4 +1,5 @@
 import { getCurrentCrushProfileDetail } from "@/lib/repositories";
+import Link from "next/link";
 
 export default async function ProfilePage() {
   const { profile, traits } = await getCurrentCrushProfileDetail();
@@ -16,7 +17,15 @@ export default async function ProfilePage() {
           <Info label="AI 置信度" value={profile?.aiConfidence ? `${Number(profile.aiConfidence) * 100}%` : "待积累"} />
         </div>
         <div className="mt-7 grid gap-4">
-          {traits.length ? (
+          {!profile ? (
+            <div className="rounded-3xl bg-blush-50 p-5 text-sm leading-7 text-ink-700">
+              <p className="font-black text-ink-900">还没有 Crush 档案</p>
+              <p>先完成建档流程，事实、推测和雷区才会在这里逐步沉淀。</p>
+              <Link className="mt-3 inline-flex rounded-full bg-white px-4 py-2 font-bold text-ink-900" href="/onboarding/create">
+                去创建档案
+              </Link>
+            </div>
+          ) : traits.length ? (
             traits.map((trait) => (
               <article key={trait.id} className="rounded-3xl bg-blush-50 p-5 md:p-6">
                 <h2 className="text-lg font-semibold leading-7 text-ink-900">{trait.label}</h2>

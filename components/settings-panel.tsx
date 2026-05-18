@@ -15,7 +15,12 @@ export function SettingsPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ confirmText }),
       });
-      setMessage(response.ok ? "Crush 数据已粉碎。刷新工作台后会回到未建档状态。" : "请输入 DELETE 才能粉碎。");
+      const payload = await response.json().catch(() => null);
+      setMessage(
+        response.ok
+          ? "Crush 数据已粉碎。刷新工作台后会回到未建档状态。"
+          : payload?.message ?? payload?.error ?? "粉碎失败，请稍后重试。",
+      );
     });
   }
 
@@ -27,8 +32,9 @@ export function SettingsPanel() {
           默认保护原始材料，保留可控的虚拟资产。
         </h1>
         <div className="mt-6 grid gap-3 text-sm leading-7 text-ink-700">
-          <p className="rounded-3xl bg-mint-100/55 p-4">图片参考默认生成后删除原图，只保留二次元角色资产和视觉标签。</p>
+          <p className="rounded-3xl bg-mint-100/55 p-4">图片参考只用于本次生成；确认删除成功后，系统才会标记为已删除。</p>
           <p className="rounded-3xl bg-mint-100/55 p-4">语音输入只用于即时转写，临时录音会在识别结束后删除，不作为长期素材保留。</p>
+          <p className="rounded-3xl bg-mint-100/55 p-4">生成后的二次元角色资产和合成语音会保留，直到你手动粉碎当前 Crush 时一并删除。</p>
           <p className="rounded-3xl bg-mint-100/55 p-4">语音使用产品内合成声线，不做真实人物声音克隆。</p>
           <p className="rounded-3xl bg-mint-100/55 p-4">聊天文本只提取摘要标签，推测必须由用户确认后才入档。</p>
         </div>
@@ -37,7 +43,7 @@ export function SettingsPanel() {
             <Trash2 aria-hidden="true" size={20} />
             一键粉碎 Crush 数据
           </h2>
-          <p className="mt-2 text-sm leading-6 text-ink-700">输入 DELETE 进行二次确认。该操作会删除当前 Crush 的聊天、情报、行动、回忆和生成资产引用。</p>
+          <p className="mt-2 text-sm leading-6 text-ink-700">输入 DELETE 进行二次确认。该操作会永久删除当前 Crush 的聊天、情报、行动、回忆和已生成素材。</p>
           <div className="mt-4 flex gap-2">
             <input
               className="min-h-12 flex-1 rounded-full border border-blush-100 bg-white px-4 font-bold outline-none focus:border-blush-500"

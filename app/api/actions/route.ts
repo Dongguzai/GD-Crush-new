@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { badRequestResponse, handleApiError, notFoundResponse } from "@/lib/errors";
 import { createCurrentAction, getCurrentActionsAndSuggestions } from "@/lib/repositories";
 
 const requestSchema = z.object({
@@ -9,15 +10,26 @@ const requestSchema = z.object({
 });
 
 export async function GET() {
-  return NextResponse.json(await getCurrentActionsAndSuggestions());
+  try {
+    return NextResponse.json(await getCurrentActionsAndSuggestions());
+  } catch (error) {
+    return handleApiError(error);
+  }
 }
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => null);
-  const parsed = requestSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: "行动参数不正确。", issues: parsed.error.flatten() }, { status: 400 });
+  try {
+    const body = await request.json().catch(() => null);
+    const parsed = requestSchema.safeParse(body);
+    if (!parsed.success) {
+      return badRequestResponse("行动参数不正确。", parsed.error.flatten());
+    }
+    const action = await createCurrentAction(parsed.data);
+    if (!action) {
+      return notFoundResponse("关联演练不存在。");
+    }
+    return NextResponse.json({ actionId: action.id, action });
+  } catch (error) {
+    return handleApiError(error);
   }
-  const action = await createCurrentAction(parsed.data);
-  return NextResponse.json({ actionId: action.id, action });
 }

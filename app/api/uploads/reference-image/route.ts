@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { BadRequestError, handleApiError } from "@/lib/errors";
+import { deleteStoredObjectWithRetry } from "@/lib/asset-lifecycle";
 import { addCurrentCrushMaterial } from "@/lib/repositories";
 import { getStorageService } from "@/lib/storage-service";
 
@@ -7,6 +8,8 @@ const MAX_REFERENCE_IMAGE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export async function POST(request: Request) {
+  let temporaryObjectKey: string | null = null;
+
   try {
     const formData = await request.formData();
     const file = formData.get("file");
@@ -27,6 +30,7 @@ export async function POST(request: Request) {
       bytes: Buffer.from(await file.arrayBuffer()),
       contentType: file.type,
     });
+    temporaryObjectKey = temporaryObject.key;
 
     const material = await addCurrentCrushMaterial({
       materialType: "reference_image",
@@ -38,7 +42,11 @@ export async function POST(request: Request) {
       materialId: material.id,
     });
   } catch (error) {
+    if (temporaryObjectKey) {
+      await deleteStoredObjectWithRetry(getStorageService(), temporaryObjectKey).catch((cleanupError) => {
+        console.warn("[Reference Image] Failed to clean up orphaned temporary image", cleanupError);
+      });
+    }
     return handleApiError(error);
   }
 }
-

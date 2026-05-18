@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { badRequestResponse } from "@/lib/errors";
 
 const requestSchema = z.object({
   contentType: z.string().startsWith("image/"),
@@ -10,7 +11,7 @@ export async function POST(request: Request) {
   const parsed = requestSchema.safeParse(body);
 
   if (!parsed.success) {
-    return NextResponse.json({ error: "只允许上传图片参考。" }, { status: 400 });
+    return badRequestResponse("只允许上传图片参考。");
   }
 
   return NextResponse.json({

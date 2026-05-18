@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { handleApiError } from "@/lib/errors";
+import { badRequestResponse, handleApiError } from "@/lib/errors";
 import { getVisualTagService } from "@/lib/visual-tag-service";
 
 const requestSchema = z.object({
-  temporaryObjectKey: z.string().min(1),
+  temporaryObjectKey: z.string().startsWith("tmp/reference/"),
 });
 
 export async function POST(request: Request) {
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     const parsed = requestSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json({ error: "缺少参考图临时对象。" }, { status: 400 });
+      return badRequestResponse("缺少参考图临时对象。");
     }
 
     const result = await getVisualTagService().extractFromTemporaryObject(parsed.data.temporaryObjectKey);
