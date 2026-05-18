@@ -1,47 +1,518 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { getCurrentUserId } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
   addDevMaterial,
   addDevMessage,
+  addDevSimulationTurn,
   addDevVisualAssets,
-  confirmDevUserAge,
   confirmDevProfileDraft,
-  createDevMemory,
+  confirmDevUserAge,
   createDevAction,
+  createDevCrush,
+  createDevMemory,
+  createDevProfileDraft,
   createDevQuickPractice,
   destroyDevCrush,
-  createDevCrush,
-  createDevProfileDraft,
   finishDevSimulation,
   getActiveDevCrush,
   getDevActions,
+  getDevGrowthMetrics,
+  getDevMaterials,
+  getDevMaterialsForCrush,
   getDevMemories,
   getDevMessages,
   getDevMessagesForCrush,
   getDevProfileDraft,
-  getDevGrowthMetrics,
   getDevSuggestions,
-  getDevMaterials,
-  getDevMaterialsForCrush,
   getDevTraits,
   getDevVisualAssets,
   getOrCreateDevSession,
   getOrCreateDevVoiceProfile,
-  addDevSimulationTurn,
   resolveDevSuggestion,
   startDevSimulation,
   updateDevAction,
   updateDevMessageAudio,
 } from "@/lib/dev-store";
 import { getServerEnv, hasDatabaseUrl } from "@/lib/env";
-import { auditEvents, crushProfiles, growthMetrics, users, userSettings } from "@/db/schema";
-import { getImageGenerationService, type GeneratedVisualAssetInput } from "@/lib/image-generation-service";
+import {
+  aiProfileDrafts,
+  auditEvents,
+  chatSessions,
+  crushProfiles,
+  crushTraits,
+  growthMetrics,
+  memories,
+  messages,
+  onboardingMaterials,
+  practiceRuns,
+  profileUpdateSuggestions,
+  realActions,
+  users,
+  userSettings,
+  visualAssets,
+  voiceProfiles,
+} from "@/db/schema";
+import {
+  getImageGenerationService,
+  type GeneratedVisualAssetInput,
+} from "@/lib/image-generation-service";
 import { getStorageService } from "@/lib/storage-service";
 import { getTtsService } from "@/lib/tts-service";
 import type { VisualTheme } from "@/lib/visual-prompts";
+
+type ProfileFact = {
+  label: string;
+  value?: string;
+};
+
+type ProfileInference = {
+  label: string;
+  value?: string;
+  confidence?: number;
+};
+
+type AiProfileAnalysis = {
+  personalityTraits?: string[];
+  communicationStyle?: string;
+  likes?: string[];
+  dislikes?: string[];
+  emotionalTone?: string;
+};
+
+type QuickPracticeAnalysis = {
+  riskLevel: string;
+  possibleFeeling: string;
+  mainRisk: string;
+  suggestedLine: string;
+  recommendedTiming: string;
+  shouldSend: boolean;
+};
+
+function asNumber(value: string | number | null | undefined) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function mapDbDraft<T extends typeof aiProfileDrafts.$inferSelect>(draft: T) {
+  return {
+    ...draft,
+    factsJson: Array.isArray(draft.factsJson) ? draft.factsJson : [],
+    inferredTraitsJson: Array.isArray(draft.inferredTraitsJson) ? draft.inferredTraitsJson : [],
+    boundariesJson: Array.isArray(draft.boundariesJson) ? draft.boundariesJson : [],
+    confidence: asNumber(draft.confidence) ?? 0,
+  };
+}
+
+function mapDbTrait<T extends typeof crushTraits.$inferSelect>(trait: T) {
+  return {
+    ...trait,
+    confidence: asNumber(trait.confidence),
+  };
+}
+
+function mapDbSuggestion<T extends typeof profileUpdateSuggestions.$inferSelect>(suggestion: T) {
+  return {
+    ...suggestion,
+    confidence: asNumber(suggestion.confidence) ?? 0,
+  };
+}
+
+function buildDraftPayload(
+  profile: {
+    relationshipOrigin?: string | null;
+    personalitySummary?: string | null;
+    realRelationshipStage?: string | null;
+  },
+  materials: Array<{ sanitizedText?: string | null }>,
+  aiAnalysis?: AiProfileAnalysis | null,
+) {
+  const materialText = materials
+    .map((item) => item.sanitizedText)
+    .filter(Boolean)
+    .join("\n");
+
+  const facts = [
+    profile.relationshipOrigin ? { label: "认识方式", value: profile.relationshipOrigin } : null,
+    profile.personalitySummary ? { label: "最近互动", value: profile.personalitySummary } : null,
+    materialText ? { label: "用户补充材料", value: materialText.slice(0, 120) } : null,
+  ].filter(Boolean) as ProfileFact[];
+
+  const inferred: Required<ProfileInference>[] = [];
+
+  if (aiAnalysis?.personalityTraits?.length) {
+    inferred.push({
+      label: "性格特征",
+      value: aiAnalysis.personalityTraits.join("；"),
+      confidence: 0.75,
+    });
+  }
+  if (aiAnalysis?.communicationStyle) {
+    inferred.push({
+      label: "沟通风格",
+      value: aiAnalysis.communicationStyle,
+      confidence: 0.72,
+    });
+  }
+  if (aiAnalysis?.likes?.length) {
+    inferred.push({
+      label: "喜好",
+      value: aiAnalysis.likes.join("；"),
+      confidence: 0.68,
+    });
+  }
+  if (aiAnalysis?.dislikes?.length) {
+    inferred.push({
+      label: "雷区",
+      value: aiAnalysis.dislikes.join("；"),
+      confidence: 0.7,
+    });
+  }
+  if (!inferred.length) {
+    inferred.push({
+      label: "沟通节奏",
+      value: materialText.includes("忙") ? "可能需要低频、轻量推进" : "适合先用轻松话题建立舒适度",
+      confidence: 0.62,
+    });
+  }
+
+  const boundaries: Required<ProfileInference>[] = [];
+  if (aiAnalysis?.dislikes?.length) {
+    for (const dislike of aiAnalysis.dislikes.slice(0, 2)) {
+      boundaries.push({
+        label: "避免",
+        value: `不宜主动提 ${dislike}`,
+        confidence: 0.65,
+      });
+    }
+  }
+  if (!boundaries.length) {
+    boundaries.push({
+      label: "避免连续追问",
+      value: "在对方回复不明确时，先给空间，不追加压力。",
+      confidence: 0.7,
+    });
+  }
+
+  return {
+    factsJson: facts,
+    inferredTraitsJson: inferred,
+    boundariesJson: boundaries,
+    recommendedStage: profile.realRelationshipStage ?? "普通朋友",
+    interactionTemperature: aiAnalysis?.emotionalTone?.includes("暖") ? "warm" : "neutral",
+    confidence: aiAnalysis ? 0.78 : 0.66,
+  };
+}
+
+function buildVisualAssetInputs(
+  crushId: string,
+  theme: string,
+  generatedAssets?: GeneratedVisualAssetInput[],
+): GeneratedVisualAssetInput[] {
+  const base = `/api/mock-character?theme=${encodeURIComponent(theme)}&crush=${encodeURIComponent(crushId)}`;
+
+  return (
+    generatedAssets ?? [
+      {
+        assetType: "avatar",
+        expression: null,
+        storageUrl: `${base}&asset=avatar`,
+        promptSnapshot: "MVP mock two-dimensional otome character asset",
+      },
+      {
+        assetType: "portrait",
+        expression: null,
+        storageUrl: `${base}&asset=portrait`,
+        promptSnapshot: "MVP mock two-dimensional otome character asset",
+      },
+      {
+        assetType: "expression",
+        expression: "neutral",
+        storageUrl: `${base}&asset=neutral`,
+        promptSnapshot: "MVP mock two-dimensional otome character asset",
+      },
+      {
+        assetType: "expression",
+        expression: "happy",
+        storageUrl: `${base}&asset=happy`,
+        promptSnapshot: "MVP mock two-dimensional otome character asset",
+      },
+      {
+        assetType: "expression",
+        expression: "shy",
+        storageUrl: `${base}&asset=shy`,
+        promptSnapshot: "MVP mock two-dimensional otome character asset",
+      },
+    ]
+  );
+}
+
+function buildQuickPracticePayload(
+  input: {
+    scenarioType: string;
+    sendContext: string;
+    userLine: string;
+  },
+  aiAnalysis?: QuickPracticeAnalysis | null,
+) {
+  const riskLevel =
+    aiAnalysis?.riskLevel ??
+    (input.userLine.includes("必须") || input.userLine.includes("为什么不回")
+      ? "high"
+      : input.userLine.includes("单独") || input.userLine.includes("喜欢")
+        ? "medium"
+        : "low");
+
+  const simulatedReply =
+    riskLevel === "high"
+      ? "我现在不太想聊这个，先这样吧。"
+      : riskLevel === "medium"
+        ? "啊这周可能有点忙，我看看吧。"
+        : "听起来可以呀，到时候看看时间。";
+
+  const suggestedLine =
+    aiAnalysis?.suggestedLine ??
+    (riskLevel === "high"
+      ? "刚才我可能有点急了，你不用马上回复。等你方便的时候再说就好。"
+      : "你之前提到的那件事我也挺感兴趣。要是哪天你也想去，我们可以一起。");
+
+  return {
+    riskLevel,
+    simulatedReply,
+    suggestedLine,
+    coachAnalysisJson: {
+      possibleFeeling:
+        aiAnalysis?.possibleFeeling ??
+        (riskLevel === "low" ? "压力较小，像自然延续话题。" : "对方可能感到推进略快或被施压。"),
+      mainRisk: aiAnalysis?.mainRisk ?? (riskLevel === "low" ? "风险较低。" : "铺垫不足，表达压力偏高。"),
+      advice: aiAnalysis?.recommendedTiming ?? (riskLevel === "high" ? "建议先降频，避免追问。" : "降低邀约压力，保留对方选择空间。"),
+      shouldSend: aiAnalysis?.shouldSend ?? riskLevel !== "high",
+    },
+  };
+}
+
+function buildSimulationReply(message: string) {
+  const crushReply = message.includes("抱歉")
+    ? "没事啦，只是当时有点突然。你这样说我会比较好理解。"
+    : "我听到了，不过我可能需要一点时间想想。";
+  const coachTip = {
+    riskLevel: message.includes("必须") ? "high" : "low",
+    advice: message.includes("抱歉") ? "表达清楚且不过度解释，可以停在这里给对方空间。" : "继续保持轻量，不要急着要求对方表态。",
+    nextMove: "观察对方是否主动延续话题。",
+  };
+
+  return { crushReply, coachTip };
+}
+
+function buildFinishedSimulationPayload(session: {
+  crushId: string;
+  id: string;
+  scenarioType?: string | null;
+}) {
+  return {
+    crushId: session.crushId,
+    sessionId: session.id,
+    practiceType: "full_simulation",
+    scenarioType: session.scenarioType ?? "conversation",
+    riskLevel: "low",
+    simulatedReply: "整体反馈较温和，但仍建议给对方空间。",
+    suggestedLine: "刚刚那件事我想清楚了，不急着让你马上回应，只是想把我的意思说清楚。",
+    coachAnalysisJson: {
+      summary: "你完成了一轮克制表达，没有把压力推给对方。",
+      riskPoints: ["后续不要连续追问结果。"],
+      recommendedNextAction: "等待对方自然回应，至少间隔半天。",
+    },
+  };
+}
+
+function buildVoiceDefaults(theme: string) {
+  return {
+    voiceStyle: theme === "dream_otome" ? "romantic" : theme === "city_healing" ? "gentle" : "clear",
+    speed: theme === "city_healing" ? "slow" : "normal",
+    emotionLevel: theme === "dream_otome" ? "sweet" : "natural",
+    ageStyle: "young",
+  };
+}
+
+async function getDbActiveCrush(userId: string) {
+  const db = getDb();
+  const [profile] = await db
+    .select()
+    .from(crushProfiles)
+    .where(and(eq(crushProfiles.userId, userId), eq(crushProfiles.status, "active")))
+    .limit(1);
+
+  return profile ?? null;
+}
+
+async function getOrCreateDbSession(crushId: string, sessionType: string, title?: string) {
+  const db = getDb();
+  const [existing] = await db
+    .select()
+    .from(chatSessions)
+    .where(
+      and(
+        eq(chatSessions.crushId, crushId),
+        eq(chatSessions.sessionType, sessionType),
+        eq(chatSessions.status, "active"),
+      ),
+    )
+    .limit(1);
+
+  if (existing) {
+    return existing;
+  }
+
+  const [session] = await db
+    .insert(chatSessions)
+    .values({
+      crushId,
+      sessionType,
+      title: title ?? null,
+    })
+    .returning();
+
+  return session;
+}
+
+async function updateDbMetrics(
+  crushId: string,
+  update: (current: typeof growthMetrics.$inferSelect) => Partial<typeof growthMetrics.$inferInsert>,
+) {
+  const db = getDb();
+  const [current] = await db.select().from(growthMetrics).where(eq(growthMetrics.crushId, crushId)).limit(1);
+
+  if (!current) {
+    return null;
+  }
+
+  const [updated] = await db
+    .update(growthMetrics)
+    .set({
+      ...update(current),
+      updatedAt: new Date(),
+    })
+    .where(eq(growthMetrics.crushId, crushId))
+    .returning();
+
+  return updated ?? null;
+}
+
+async function addDbMessage(input: {
+  sessionId: string;
+  role: "user" | "crush" | "coach" | "system";
+  content: string;
+  audioUrl?: string | null;
+  metadataJson?: unknown;
+}) {
+  const db = getDb();
+  const [message] = await db
+    .insert(messages)
+    .values({
+      sessionId: input.sessionId,
+      role: input.role,
+      content: input.content,
+      audioUrl: input.audioUrl ?? null,
+      metadataJson: input.metadataJson,
+    })
+    .returning();
+
+  const [session] = await db.select().from(chatSessions).where(eq(chatSessions.id, input.sessionId)).limit(1);
+
+  if (session) {
+    await db.update(chatSessions).set({ updatedAt: message.createdAt }).where(eq(chatSessions.id, session.id));
+
+    if (input.role === "crush") {
+      await updateDbMetrics(session.crushId, (current) => ({
+        virtualIntimacy: Math.min(999, current.virtualIntimacy + 2),
+        emotionalStability: Math.min(100, current.emotionalStability + 1),
+      }));
+    }
+  }
+
+  return message;
+}
+
+async function addDbVisualAssets(
+  crushId: string,
+  input: {
+    theme: string;
+    visualTags: Record<string, unknown>;
+    referenceImageKey?: string;
+  },
+  generatedAssets?: GeneratedVisualAssetInput[],
+) {
+  const db = getDb();
+  const assetInputs = buildVisualAssetInputs(crushId, input.theme, generatedAssets);
+  const inserted = await db
+    .insert(visualAssets)
+    .values(
+      assetInputs.map((asset) => ({
+        crushId,
+        assetType: asset.assetType,
+        expression: asset.expression ?? null,
+        theme: input.theme,
+        visualTagsJson: input.visualTags,
+        storageUrl: asset.storageUrl,
+        promptSnapshot: asset.promptSnapshot ?? "MVP mock two-dimensional otome character asset",
+      })),
+    )
+    .returning();
+
+  if (input.referenceImageKey) {
+    const now = new Date();
+    const updated = await db
+      .update(onboardingMaterials)
+      .set({
+        retentionStatus: "deleted",
+        deletedAt: now,
+      })
+      .where(
+        and(
+          eq(onboardingMaterials.crushId, crushId),
+          eq(onboardingMaterials.materialType, "reference_image"),
+          eq(onboardingMaterials.retentionStatus, "temporary"),
+          eq(onboardingMaterials.storageUrl, input.referenceImageKey),
+        ),
+      )
+      .returning();
+
+    if (updated.length > 0) {
+      const [profile] = await db
+        .select({ userId: crushProfiles.userId })
+        .from(crushProfiles)
+        .where(eq(crushProfiles.id, crushId))
+        .limit(1);
+
+      if (profile) {
+        await db.insert(auditEvents).values({
+          userId: profile.userId,
+          eventType: "image_deleted",
+        });
+      }
+    }
+  }
+
+  return inserted;
+}
+
+async function getDbMessagesForCrush(crushId: string) {
+  const db = getDb();
+  const sessions = await db.select({ id: chatSessions.id }).from(chatSessions).where(eq(chatSessions.crushId, crushId));
+  const sessionIds = sessions.map((session) => session.id);
+
+  if (!sessionIds.length) {
+    return [];
+  }
+
+  return db.select().from(messages).where(inArray(messages.sessionId, sessionIds));
+}
 
 export async function confirmCurrentUserAge() {
   const userId = await getCurrentUserId();
@@ -79,17 +550,15 @@ export async function createCurrentUserCrush(input: {
   }
 
   const db = getDb();
-  const existing = await db
-    .select()
-    .from(crushProfiles)
-    .where(eq(crushProfiles.userId, userId))
-    .limit(1);
+  await db.insert(users).values({ id: userId }).onConflictDoNothing();
+  await db.insert(userSettings).values({ userId }).onConflictDoNothing();
 
-  if (existing[0]?.status === "active") {
-    return existing[0];
+  const existing = await getDbActiveCrush(userId);
+  if (existing) {
+    return existing;
   }
 
-  const inserted = await db
+  const [profile] = await db
     .insert(crushProfiles)
     .values({
       userId,
@@ -102,7 +571,6 @@ export async function createCurrentUserCrush(input: {
     })
     .returning();
 
-  const profile = inserted[0];
   await db.insert(growthMetrics).values({ crushId: profile.id }).onConflictDoNothing();
   return profile;
 }
@@ -117,11 +585,7 @@ export async function getCurrentUserActiveCrush() {
   }
 
   const db = getDb();
-  const [profile] = await db
-    .select()
-    .from(crushProfiles)
-    .where(eq(crushProfiles.userId, userId))
-    .limit(1);
+  const profile = await getDbActiveCrush(userId);
 
   if (!profile) {
     return { profile: null, metrics: null };
@@ -141,27 +605,43 @@ export async function addCurrentCrushMaterial(input: {
   sanitizedText?: string | null;
   storageUrl?: string | null;
 }) {
-  const userId = await getCurrentUserId();
-  const active = await getActiveDevCrush(userId);
+  const { profile: active } = await getCurrentUserActiveCrush();
 
   if (!active) {
     throw new Error("No active Crush profile.");
   }
 
-  return addDevMaterial(active.id, input);
+  if (!hasDatabaseUrl()) {
+    return addDevMaterial(active.id, input);
+  }
+
+  const db = getDb();
+  const [material] = await db
+    .insert(onboardingMaterials)
+    .values({
+      crushId: active.id,
+      materialType: input.materialType,
+      sanitizedText: input.sanitizedText ?? null,
+      storageUrl: input.storageUrl ?? null,
+      retentionStatus: input.materialType === "reference_image" ? "temporary" : "retained_summary",
+    })
+    .returning();
+
+  return material;
 }
 
 export async function analyzeCurrentCrushProfile() {
-  const userId = await getCurrentUserId();
-  const active = await getActiveDevCrush(userId);
+  const { profile: active } = await getCurrentUserActiveCrush();
 
   if (!active) {
     throw new Error("No active Crush profile.");
   }
 
-  const materials = await getDevMaterials(active.id);
+  const materials = hasDatabaseUrl()
+    ? await getDb().select().from(onboardingMaterials).where(eq(onboardingMaterials.crushId, active.id))
+    : await getDevMaterials(active.id);
   const materialList = materials
-    .map((m) => m.sanitizedText)
+    .map((material) => material.sanitizedText)
     .filter(Boolean) as string[];
 
   let analysisResult: {
@@ -196,43 +676,159 @@ export async function analyzeCurrentCrushProfile() {
     console.warn("[AI] Profile analysis failed, falling back to mock", error);
   }
 
-  const personalityTraits = analysisResult?.profile?.personalityTraits ?? [];
-  const communicationStyle = analysisResult?.profile?.communicationStyle ?? "";
-  const likes = analysisResult?.profile?.likes ?? [];
-  const dislikes = analysisResult?.profile?.dislikes ?? [];
-  const emotionalTone = analysisResult?.textAnalysis?.emotionalTone ?? "";
+  const aiAnalysis: AiProfileAnalysis = {
+    personalityTraits: analysisResult?.profile?.personalityTraits ?? [],
+    communicationStyle: analysisResult?.profile?.communicationStyle ?? "",
+    likes: analysisResult?.profile?.likes ?? [],
+    dislikes: analysisResult?.profile?.dislikes ?? [],
+    emotionalTone: analysisResult?.textAnalysis?.emotionalTone ?? "",
+  };
 
-  return createDevProfileDraft(active.id, {
-    personalityTraits,
-    communicationStyle,
-    likes,
-    dislikes,
-    emotionalTone,
-  });
+  if (!hasDatabaseUrl()) {
+    return createDevProfileDraft(active.id, aiAnalysis);
+  }
+
+  const payload = buildDraftPayload(active, materials, aiAnalysis);
+  const [draft] = await getDb()
+    .insert(aiProfileDrafts)
+    .values({
+      crushId: active.id,
+      ...payload,
+      confidence: String(payload.confidence),
+    })
+    .returning();
+
+  return mapDbDraft(draft);
 }
 
 export async function confirmCurrentDraft(
   draftId: string,
   input: {
-    acceptedFacts?: { label: string; value?: string }[];
-    acceptedTraits?: { label: string; value?: string; confidence?: number }[];
+    acceptedFacts?: ProfileFact[];
+    acceptedTraits?: ProfileInference[];
     realRelationshipStage?: string;
     interactionTemperature?: string;
   },
 ) {
-  return confirmDevProfileDraft(draftId, input);
+  if (!hasDatabaseUrl()) {
+    return confirmDevProfileDraft(draftId, input);
+  }
+
+  const db = getDb();
+  const [draftRow] = await db.select().from(aiProfileDrafts).where(eq(aiProfileDrafts.id, draftId)).limit(1);
+  if (!draftRow) {
+    return null;
+  }
+
+  const draft = mapDbDraft(draftRow);
+  const now = new Date();
+  const [profile] = await db
+    .update(crushProfiles)
+    .set({
+      realRelationshipStage: input.realRelationshipStage ?? draft.recommendedStage,
+      interactionTemperature: input.interactionTemperature ?? draft.interactionTemperature,
+      aiConfidence: String(draft.confidence),
+      updatedAt: now,
+    })
+    .where(eq(crushProfiles.id, draft.crushId))
+    .returning();
+
+  await db
+    .update(aiProfileDrafts)
+    .set({
+      status: "confirmed",
+      confirmedAt: now,
+    })
+    .where(eq(aiProfileDrafts.id, draft.id));
+
+  const facts = input.acceptedFacts ?? (draft.factsJson as ProfileFact[]);
+  const traits = input.acceptedTraits ?? (draft.inferredTraitsJson as ProfileInference[]);
+  const boundaries = draft.boundariesJson as ProfileInference[];
+  const traitRows = [
+    ...facts.map((fact) => ({
+      crushId: draft.crushId,
+      traitType: "fact",
+      label: fact.label,
+      description: fact.value ?? null,
+      source: "ai",
+      confidence: "1",
+      confirmed: true,
+    })),
+    ...traits.map((trait) => ({
+      crushId: draft.crushId,
+      traitType: "style",
+      label: trait.label,
+      description: trait.value ?? null,
+      source: "ai",
+      confidence: String(trait.confidence ?? draft.confidence),
+      confirmed: true,
+    })),
+    ...boundaries.map((boundary) => ({
+      crushId: draft.crushId,
+      traitType: "boundary",
+      label: boundary.label,
+      description: boundary.value ?? null,
+      source: "ai",
+      confidence: String(boundary.confidence ?? draft.confidence),
+      confirmed: true,
+    })),
+  ];
+
+  if (traitRows.length) {
+    await db.insert(crushTraits).values(traitRows);
+  }
+
+  await updateDbMetrics(draft.crushId, (current) => ({
+    relationshipUnderstanding: Math.min(100, current.relationshipUnderstanding + 12),
+  }));
+
+  return { draft, profile };
 }
 
 export async function getCurrentCrushProfileDetail() {
   const { profile, metrics } = await getCurrentUserActiveCrush();
-  const traits = profile ? await getDevTraits(profile.id) : [];
-  const materials = profile ? await getDevMaterials(profile.id) : [];
-  const visualAssets = profile ? await getDevVisualAssets(profile.id) : [];
-  return { profile, metrics, traits, materials, visualAssets };
+
+  if (!profile) {
+    return { profile, metrics, traits: [], materials: [], visualAssets: [] };
+  }
+
+  if (!hasDatabaseUrl()) {
+    return {
+      profile,
+      metrics,
+      traits: await getDevTraits(profile.id),
+      materials: await getDevMaterials(profile.id),
+      visualAssets: await getDevVisualAssets(profile.id),
+    };
+  }
+
+  const db = getDb();
+  const [traits, materials, assets] = await Promise.all([
+    db.select().from(crushTraits).where(eq(crushTraits.crushId, profile.id)).orderBy(asc(crushTraits.createdAt)),
+    db
+      .select()
+      .from(onboardingMaterials)
+      .where(eq(onboardingMaterials.crushId, profile.id))
+      .orderBy(asc(onboardingMaterials.createdAt)),
+    db.select().from(visualAssets).where(eq(visualAssets.crushId, profile.id)).orderBy(asc(visualAssets.createdAt)),
+  ]);
+
+  return {
+    profile,
+    metrics,
+    traits: traits.map(mapDbTrait),
+    materials,
+    visualAssets: assets,
+  };
 }
 
 export async function getProfileDraftById(draftId: string) {
-  return getDevProfileDraft(draftId);
+  if (!hasDatabaseUrl()) {
+    return getDevProfileDraft(draftId);
+  }
+
+  const [draft] = await getDb().select().from(aiProfileDrafts).where(eq(aiProfileDrafts.id, draftId)).limit(1);
+  return draft ? mapDbDraft(draft) : null;
 }
 
 export async function generateCurrentCrushVisualAssets(input: {
@@ -240,8 +836,7 @@ export async function generateCurrentCrushVisualAssets(input: {
   visualTags: Record<string, unknown>;
   referenceImageKey?: string;
 }) {
-  const userId = await getCurrentUserId();
-  const active = await getActiveDevCrush(userId);
+  const { profile: active } = await getCurrentUserActiveCrush();
 
   if (!active) {
     throw new Error("No active Crush profile.");
@@ -259,7 +854,9 @@ export async function generateCurrentCrushVisualAssets(input: {
     });
   }
 
-  const assets = await addDevVisualAssets(active.id, input, generatedAssets);
+  const assets = hasDatabaseUrl()
+    ? await addDbVisualAssets(active.id, input, generatedAssets)
+    : await addDevVisualAssets(active.id, input, generatedAssets);
 
   if (input.referenceImageKey) {
     await getStorageService().deleteObject(input.referenceImageKey).catch((error) => {
@@ -275,8 +872,7 @@ export async function generateCurrentCrushSceneAsset(input: {
   visualTags?: Record<string, unknown>;
   sceneDescription: string;
 }) {
-  const userId = await getCurrentUserId();
-  const active = await getActiveDevCrush(userId);
+  const { profile: active } = await getCurrentUserActiveCrush();
 
   if (!active) {
     throw new Error("No active Crush profile.");
@@ -296,29 +892,49 @@ export async function generateCurrentCrushSceneAsset(input: {
         promptSnapshot: "MVP mock two-dimensional otome scene asset",
       };
 
-  const [asset] = await addDevVisualAssets(
-    active.id,
-    {
-      theme: input.theme,
-      visualTags: input.visualTags ?? {},
-    },
-    [generatedAsset],
-  );
+  const [asset] = hasDatabaseUrl()
+    ? await addDbVisualAssets(
+        active.id,
+        {
+          theme: input.theme,
+          visualTags: input.visualTags ?? {},
+        },
+        [generatedAsset],
+      )
+    : await addDevVisualAssets(
+        active.id,
+        {
+          theme: input.theme,
+          visualTags: input.visualTags ?? {},
+        },
+        [generatedAsset],
+      );
 
   return asset;
 }
 
 export async function getCurrentCompanionChat() {
-  const userId = await getCurrentUserId();
-  const active = await getActiveDevCrush(userId);
+  const { profile: active } = await getCurrentUserActiveCrush();
 
   if (!active) {
     return { profile: null, session: null, messages: [] };
   }
 
-  const session = await getOrCreateDevSession(active.id, "companion", "甜蜜陪伴");
-  const messages = await getDevMessages(session.id);
-  return { profile: active, session, messages };
+  if (!hasDatabaseUrl()) {
+    const session = await getOrCreateDevSession(active.id, "companion", "甜蜜陪伴");
+    const sessionMessages = await getDevMessages(session.id);
+    return { profile: active, session, messages: sessionMessages };
+  }
+
+  const db = getDb();
+  const session = await getOrCreateDbSession(active.id, "companion", "甜蜜陪伴");
+  const sessionMessages = await db
+    .select()
+    .from(messages)
+    .where(eq(messages.sessionId, session.id))
+    .orderBy(asc(messages.createdAt));
+
+  return { profile: active, session, messages: sessionMessages };
 }
 
 export async function sendCurrentCompanionMessage(
@@ -327,17 +943,20 @@ export async function sendCurrentCompanionMessage(
     crushNickname?: string;
     relationshipStage?: string;
     interactionTemperature?: string;
-  }
+  },
 ) {
-  const userId = await getCurrentUserId();
-  const active = await getActiveDevCrush(userId);
+  const { profile: active } = await getCurrentUserActiveCrush();
 
   if (!active) {
     throw new Error("No active Crush profile.");
   }
 
-  const session = await getOrCreateDevSession(active.id, "companion", "甜蜜陪伴");
-  const userMessage = await addDevMessage({ sessionId: session.id, role: "user", content: message });
+  const session = hasDatabaseUrl()
+    ? await getOrCreateDbSession(active.id, "companion", "甜蜜陪伴")
+    : await getOrCreateDevSession(active.id, "companion", "甜蜜陪伴");
+  const userMessage = hasDatabaseUrl()
+    ? await addDbMessage({ sessionId: session.id, role: "user", content: message })
+    : await addDevMessage({ sessionId: session.id, role: "user", content: message });
 
   let reply: string;
   try {
@@ -349,28 +968,42 @@ export async function sendCurrentCompanionMessage(
         crushNickname: context?.crushNickname ?? active.nickname,
         relationshipStage: context?.relationshipStage ?? active.realRelationshipStage,
         interactionTemperature: context?.interactionTemperature ?? active.interactionTemperature,
-      }
+      },
     );
   } catch {
     reply = buildMockCompanionReply(active.nickname, message);
   }
 
-  const crushMessage = await addDevMessage({ sessionId: session.id, role: "crush", content: reply });
+  const crushMessage = hasDatabaseUrl()
+    ? await addDbMessage({ sessionId: session.id, role: "crush", content: reply })
+    : await addDevMessage({ sessionId: session.id, role: "crush", content: reply });
   return { session, userMessage, crushMessage };
 }
 
 function buildMockCompanionReply(nickname: string, message: string) {
   if (message.includes("难过") || message.includes("焦虑") || message.includes("烦")) {
-    return `我在。先慢慢呼吸一下，今天不用急着证明什么。你愿意把这件事告诉我，已经很勇敢了。`;
+    return "我在。先慢慢呼吸一下，今天不用急着证明什么。你愿意把这件事告诉我，已经很勇敢了。";
   }
   if (message.includes("晚安") || message.includes("睡")) {
-    return `晚安呀。把手机放远一点也没关系，我会在这个小世界里等你明天回来。`;
+    return "晚安呀。把手机放远一点也没关系，我会在这个小世界里等你明天回来。";
   }
   return `嗯，我听见了。作为虚拟的 ${nickname}，我可以陪你把这句话慢慢说完。现实里的事我们也可以一步一步来，不用一下子冲太快。`;
 }
 
 export async function attachMockVoiceToMessage(messageId: string) {
-  return updateDevMessageAudio(messageId, `/api/voice/mock?messageId=${encodeURIComponent(messageId)}`);
+  const audioUrl = `/api/voice/mock?messageId=${encodeURIComponent(messageId)}`;
+
+  if (!hasDatabaseUrl()) {
+    return updateDevMessageAudio(messageId, audioUrl);
+  }
+
+  const [message] = await getDb()
+    .update(messages)
+    .set({ audioUrl })
+    .where(eq(messages.id, messageId))
+    .returning();
+
+  return message ?? null;
 }
 
 export async function attachVoiceToMessage(input: {
@@ -378,8 +1011,7 @@ export async function attachVoiceToMessage(input: {
   text: string;
   speaker?: string | null;
 }) {
-  const userId = await getCurrentUserId();
-  const active = await getActiveDevCrush(userId);
+  const { profile: active } = await getCurrentUserActiveCrush();
 
   if (!active || !getServerEnv().TTS_API_KEY) {
     const message = await attachMockVoiceToMessage(input.messageId);
@@ -391,18 +1023,52 @@ export async function attachVoiceToMessage(input: {
     category: `crush-${active.id}-voice`,
     speaker: input.speaker,
   });
-  const message = await updateDevMessageAudio(input.messageId, audio.url);
+
+  const message = hasDatabaseUrl()
+    ? (
+        await getDb()
+          .update(messages)
+          .set({ audioUrl: audio.url })
+          .where(eq(messages.id, input.messageId))
+          .returning()
+      )[0] ?? null
+    : await updateDevMessageAudio(input.messageId, audio.url);
+
   return { message, provider: "seed-tts-2.0" as const };
 }
 
 export async function getCurrentVoiceProfile() {
-  const userId = await getCurrentUserId();
-  const active = await getActiveDevCrush(userId);
+  const { profile: active } = await getCurrentUserActiveCrush();
   if (!active) {
     return null;
   }
-  const assets = await getDevVisualAssets(active.id);
-  return getOrCreateDevVoiceProfile(active.id, assets[0]?.theme ?? "sunny_campus");
+
+  if (!hasDatabaseUrl()) {
+    const assets = await getDevVisualAssets(active.id);
+    return getOrCreateDevVoiceProfile(active.id, assets[0]?.theme ?? "sunny_campus");
+  }
+
+  const db = getDb();
+  const [existing] = await db.select().from(voiceProfiles).where(eq(voiceProfiles.crushId, active.id)).limit(1);
+  if (existing) {
+    return existing;
+  }
+
+  const [asset] = await db
+    .select({ theme: visualAssets.theme })
+    .from(visualAssets)
+    .where(eq(visualAssets.crushId, active.id))
+    .orderBy(asc(visualAssets.createdAt))
+    .limit(1);
+  const [voice] = await db
+    .insert(voiceProfiles)
+    .values({
+      crushId: active.id,
+      ...buildVoiceDefaults(asset?.theme ?? "sunny_campus"),
+    })
+    .returning();
+
+  return voice;
 }
 
 export async function createCurrentMemory(input: {
@@ -413,21 +1079,42 @@ export async function createCurrentMemory(input: {
   imageUrl?: string | null;
   rewardJson?: Record<string, unknown> | null;
 }) {
-  const userId = await getCurrentUserId();
-  const active = await getActiveDevCrush(userId);
+  const { profile: active } = await getCurrentUserActiveCrush();
   if (!active) {
     throw new Error("No active Crush profile.");
   }
-  return createDevMemory({ crushId: active.id, ...input });
+
+  if (!hasDatabaseUrl()) {
+    return createDevMemory({ crushId: active.id, ...input });
+  }
+
+  const [memory] = await getDb()
+    .insert(memories)
+    .values({
+      crushId: active.id,
+      ...input,
+    })
+    .returning();
+
+  await updateDbMetrics(active.id, (current) => ({
+    memoryFragments: current.memoryFragments + 1,
+    virtualIntimacy: Math.min(999, current.virtualIntimacy + 5),
+  }));
+
+  return memory;
 }
 
 export async function getCurrentMemories() {
-  const userId = await getCurrentUserId();
-  const active = await getActiveDevCrush(userId);
+  const { profile: active } = await getCurrentUserActiveCrush();
   if (!active) {
     return [];
   }
-  return getDevMemories(active.id);
+
+  if (!hasDatabaseUrl()) {
+    return getDevMemories(active.id);
+  }
+
+  return getDb().select().from(memories).where(eq(memories.crushId, active.id)).orderBy(asc(memories.createdAt));
 }
 
 export async function runCurrentQuickPractice(input: {
@@ -435,58 +1122,154 @@ export async function runCurrentQuickPractice(input: {
   sendContext: string;
   userLine: string;
 }) {
-  const userId = await getCurrentUserId();
-  const active = await getActiveDevCrush(userId);
+  const { profile: active } = await getCurrentUserActiveCrush();
   if (!active) {
     throw new Error("No active Crush profile.");
   }
 
-  let aiResult: {
-    riskLevel: string;
-    possibleFeeling: string;
-    mainRisk: string;
-    suggestedLine: string;
-    recommendedTiming: string;
-    shouldSend: boolean;
-  } | null = null;
+  let aiResult: QuickPracticeAnalysis | null = null;
 
   try {
     const { getDeepSeekService } = await import("@/lib/ai-service");
     const aiService = getDeepSeekService();
-    aiResult = await aiService.quickLineTest(
-      input.userLine,
-      input.scenarioType,
-      {
-        crushNickname: active.nickname,
-        relationshipStage: active.realRelationshipStage,
-        sendContext: input.sendContext,
-      }
-    );
+    aiResult = await aiService.quickLineTest(input.userLine, input.scenarioType, {
+      crushNickname: active.nickname,
+      relationshipStage: active.realRelationshipStage,
+      sendContext: input.sendContext,
+    });
   } catch (error) {
     console.warn("[AI] Quick practice analysis failed, falling back to mock", error);
   }
 
-  return createDevQuickPractice(
-    { crushId: active.id, ...input },
-    aiResult ?? undefined
-  );
+  if (!hasDatabaseUrl()) {
+    return createDevQuickPractice({ crushId: active.id, ...input }, aiResult ?? undefined);
+  }
+
+  const payload = buildQuickPracticePayload(input, aiResult);
+  const [run] = await getDb()
+    .insert(practiceRuns)
+    .values({
+      crushId: active.id,
+      practiceType: "quick_line",
+      scenarioType: input.scenarioType,
+      sendContext: input.sendContext,
+      userLine: input.userLine,
+      ...payload,
+    })
+    .returning();
+
+  await updateDbMetrics(active.id, (current) => ({
+    communicationConfidence: Math.min(100, current.communicationConfidence + 3),
+  }));
+
+  return run;
 }
 
-export async function startCurrentSimulation(input: { scenarioType: string; goal: string; background: string }) {
-  const userId = await getCurrentUserId();
-  const active = await getActiveDevCrush(userId);
+export async function startCurrentSimulation(input: {
+  scenarioType: string;
+  goal: string;
+  background: string;
+}) {
+  const { profile: active } = await getCurrentUserActiveCrush();
   if (!active) {
     throw new Error("No active Crush profile.");
   }
-  return startDevSimulation({ crushId: active.id, ...input });
+
+  if (!hasDatabaseUrl()) {
+    return startDevSimulation({ crushId: active.id, ...input });
+  }
+
+  const db = getDb();
+  const [session] = await db
+    .insert(chatSessions)
+    .values({
+      crushId: active.id,
+      sessionType: "practice",
+      title: input.goal,
+      scenarioType: input.scenarioType,
+    })
+    .returning();
+  await db.insert(messages).values({
+    sessionId: session.id,
+    role: "system",
+    content: `背景：${input.background}`,
+  });
+
+  return session;
 }
 
 export async function sendCurrentSimulationMessage(sessionId: string, message: string) {
-  return addDevSimulationTurn(sessionId, message);
+  if (!hasDatabaseUrl()) {
+    return addDevSimulationTurn(sessionId, message);
+  }
+
+  const db = getDb();
+  const [session] = await db.select().from(chatSessions).where(eq(chatSessions.id, sessionId)).limit(1);
+  if (!session) {
+    return null;
+  }
+
+  const createdAt = new Date();
+  const { crushReply, coachTip } = buildSimulationReply(message);
+  const inserted = await db
+    .insert(messages)
+    .values([
+      {
+        sessionId,
+        role: "user",
+        content: message,
+        createdAt,
+      },
+      {
+        sessionId,
+        role: "crush",
+        content: crushReply,
+        metadataJson: { coachTip },
+        createdAt,
+      },
+      {
+        sessionId,
+        role: "coach",
+        content: coachTip.advice,
+        metadataJson: coachTip,
+        createdAt,
+      },
+    ])
+    .returning();
+  await db.update(chatSessions).set({ updatedAt: createdAt }).where(eq(chatSessions.id, session.id));
+
+  const [userMessage, crushMessage, coachMessage] = inserted;
+  return { crushReply, coachTip, userMessage, crushMessage, coachMessage };
 }
 
 export async function finishCurrentSimulation(sessionId: string) {
-  return finishDevSimulation(sessionId);
+  if (!hasDatabaseUrl()) {
+    return finishDevSimulation(sessionId);
+  }
+
+  const db = getDb();
+  const [session] = await db.select().from(chatSessions).where(eq(chatSessions.id, sessionId)).limit(1);
+  if (!session) {
+    return null;
+  }
+
+  const now = new Date();
+  await db
+    .update(chatSessions)
+    .set({
+      status: "completed",
+      updatedAt: now,
+    })
+    .where(eq(chatSessions.id, session.id));
+  const [run] = await db
+    .insert(practiceRuns)
+    .values({
+      ...buildFinishedSimulationPayload(session),
+      createdAt: now,
+    })
+    .returning();
+
+  return run;
 }
 
 export async function createCurrentAction(input: {
@@ -494,50 +1277,184 @@ export async function createCurrentAction(input: {
   title: string;
   suggestedMessage?: string | null;
 }) {
-  const userId = await getCurrentUserId();
-  const active = await getActiveDevCrush(userId);
+  const { profile: active } = await getCurrentUserActiveCrush();
   if (!active) {
     throw new Error("No active Crush profile.");
   }
-  return createDevAction({ crushId: active.id, ...input });
+
+  if (!hasDatabaseUrl()) {
+    return createDevAction({ crushId: active.id, ...input });
+  }
+
+  const [action] = await getDb()
+    .insert(realActions)
+    .values({
+      crushId: active.id,
+      practiceRunId: input.practiceRunId ?? null,
+      title: input.title,
+      suggestedMessage: input.suggestedMessage ?? null,
+    })
+    .returning();
+
+  return action;
 }
 
 export async function getCurrentActionsAndSuggestions() {
-  const userId = await getCurrentUserId();
-  const active = await getActiveDevCrush(userId);
+  const { profile: active } = await getCurrentUserActiveCrush();
   if (!active) {
     return { actions: [], suggestions: [] };
   }
+
+  if (!hasDatabaseUrl()) {
+    return {
+      actions: await getDevActions(active.id),
+      suggestions: await getDevSuggestions(active.id),
+    };
+  }
+
+  const db = getDb();
+  const [actions, suggestions] = await Promise.all([
+    db.select().from(realActions).where(eq(realActions.crushId, active.id)).orderBy(asc(realActions.createdAt)),
+    db
+      .select()
+      .from(profileUpdateSuggestions)
+      .where(eq(profileUpdateSuggestions.crushId, active.id))
+      .orderBy(asc(profileUpdateSuggestions.createdAt)),
+  ]);
+
   return {
-    actions: await getDevActions(active.id),
-    suggestions: await getDevSuggestions(active.id),
+    actions,
+    suggestions: suggestions.map(mapDbSuggestion),
   };
 }
 
-export async function updateCurrentAction(actionId: string, input: { status: string; feedbackText?: string | null }) {
-  return updateDevAction(actionId, input);
+export async function updateCurrentAction(
+  actionId: string,
+  input: {
+    status: string;
+    feedbackText?: string | null;
+  },
+) {
+  if (!hasDatabaseUrl()) {
+    return updateDevAction(actionId, input);
+  }
+
+  const db = getDb();
+  const [existing] = await db.select().from(realActions).where(eq(realActions.id, actionId)).limit(1);
+  if (!existing) {
+    return null;
+  }
+
+  const updatedAt = new Date();
+  const nextExecutedAt = ["sent", "positive_response", "neutral_response", "cold_response"].includes(input.status)
+    ? existing.executedAt ?? updatedAt
+    : existing.executedAt;
+  const [action] = await db
+    .update(realActions)
+    .set({
+      status: input.status,
+      feedbackText: input.feedbackText ?? existing.feedbackText ?? null,
+      executedAt: nextExecutedAt,
+      updatedAt,
+    })
+    .where(eq(realActions.id, actionId))
+    .returning();
+  const [suggestion] = await db
+    .insert(profileUpdateSuggestions)
+    .values({
+      crushId: action.crushId,
+      sourceType: "action_feedback",
+      sourceId: action.id,
+      suggestionJson: {
+        facts: input.feedbackText ? [{ label: "现实反馈", value: input.feedbackText }] : [],
+        inferredTraits: [{ label: "互动温度", value: input.status === "positive_response" ? "中性偏暖" : "需要继续观察" }],
+      },
+      confidence: input.status === "positive_response" ? "0.72" : "0.55",
+    })
+    .returning();
+
+  if (action.executedAt) {
+    await updateDbMetrics(action.crushId, (current) => ({
+      realActionCount: current.realActionCount + 1,
+      communicationConfidence: Math.min(100, current.communicationConfidence + 5),
+    }));
+  }
+
+  return { action, suggestion: mapDbSuggestion(suggestion) };
 }
 
 export async function resolveCurrentSuggestion(id: string, decision: "accepted" | "rejected") {
-  return resolveDevSuggestion(id, decision);
+  if (!hasDatabaseUrl()) {
+    return resolveDevSuggestion(id, decision);
+  }
+
+  const db = getDb();
+  const [existing] = await db.select().from(profileUpdateSuggestions).where(eq(profileUpdateSuggestions.id, id)).limit(1);
+  if (!existing) {
+    return null;
+  }
+
+  const resolvedAt = new Date();
+  const [suggestionRow] = await db
+    .update(profileUpdateSuggestions)
+    .set({
+      status: decision,
+      resolvedAt,
+    })
+    .where(eq(profileUpdateSuggestions.id, id))
+    .returning();
+  const suggestion = mapDbSuggestion(suggestionRow);
+
+  if (decision === "accepted") {
+    const payload = suggestion.suggestionJson as {
+      facts?: ProfileFact[];
+      inferredTraits?: ProfileFact[];
+    };
+    const traitRows = (payload.facts ?? []).map((fact) => ({
+      crushId: suggestion.crushId,
+      traitType: "event",
+      label: fact.label,
+      description: fact.value ?? null,
+      source: "ai",
+      confidence: String(suggestion.confidence),
+      confirmed: true,
+      createdAt: resolvedAt,
+    }));
+
+    if (traitRows.length) {
+      await db.insert(crushTraits).values(traitRows);
+    }
+
+    await updateDbMetrics(suggestion.crushId, (current) => ({
+      relationshipUnderstanding: Math.min(100, current.relationshipUnderstanding + 5),
+    }));
+  }
+
+  return suggestion;
 }
 
 export async function destroyCurrentCrush(confirmText: string) {
   if (confirmText !== "DELETE") {
     throw new Error("Invalid confirmation text.");
   }
-  const userId = await getCurrentUserId();
-  const active = await getActiveDevCrush(userId);
+
+  const { profile: active } = await getCurrentUserActiveCrush();
   if (!active) {
     return null;
   }
 
   const storage = getStorageService();
-  const [assets, materials, messages] = await Promise.all([
-    getDevVisualAssets(active.id),
-    getDevMaterialsForCrush(active.id),
-    getDevMessagesForCrush(active.id),
-  ]);
+  const [assets, materialsForCrush, crushMessages] = hasDatabaseUrl()
+    ? await Promise.all([
+        getDb().select().from(visualAssets).where(eq(visualAssets.crushId, active.id)),
+        getDb().select().from(onboardingMaterials).where(eq(onboardingMaterials.crushId, active.id)),
+        getDbMessagesForCrush(active.id),
+      ])
+    : await Promise.all([
+        getDevVisualAssets(active.id),
+        getDevMaterialsForCrush(active.id),
+        getDevMessagesForCrush(active.id),
+      ]);
 
   await Promise.all([
     ...assets.map((asset) =>
@@ -545,14 +1462,14 @@ export async function destroyCurrentCrush(confirmText: string) {
         console.warn("[Storage] Failed to delete persisted visual asset", error);
       }),
     ),
-    ...materials
+    ...materialsForCrush
       .filter((material) => material.materialType === "reference_image" && material.storageUrl)
       .map((material) =>
         storage.deleteObject(material.storageUrl as string).catch((error) => {
           console.warn("[Storage] Failed to delete reference image", error);
         }),
       ),
-    ...messages
+    ...crushMessages
       .filter((message) => message.audioUrl)
       .map((message) =>
         storage.deletePublicAssetByUrl(message.audioUrl as string).catch((error) => {
@@ -561,5 +1478,37 @@ export async function destroyCurrentCrush(confirmText: string) {
       ),
   ]);
 
-  return destroyDevCrush(userId, active.id);
+  if (!hasDatabaseUrl()) {
+    return destroyDevCrush(active.userId, active.id);
+  }
+
+  const db = getDb();
+  const sessions = await db.select({ id: chatSessions.id }).from(chatSessions).where(eq(chatSessions.crushId, active.id));
+  const sessionIds = sessions.map((session) => session.id);
+
+  await Promise.all([
+    db.delete(crushTraits).where(eq(crushTraits.crushId, active.id)),
+    db.delete(growthMetrics).where(eq(growthMetrics.crushId, active.id)),
+    db.delete(onboardingMaterials).where(eq(onboardingMaterials.crushId, active.id)),
+    db.delete(aiProfileDrafts).where(eq(aiProfileDrafts.crushId, active.id)),
+    db.delete(visualAssets).where(eq(visualAssets.crushId, active.id)),
+    db.delete(voiceProfiles).where(eq(voiceProfiles.crushId, active.id)),
+    db.delete(practiceRuns).where(eq(practiceRuns.crushId, active.id)),
+    db.delete(realActions).where(eq(realActions.crushId, active.id)),
+    db.delete(profileUpdateSuggestions).where(eq(profileUpdateSuggestions.crushId, active.id)),
+    db.delete(memories).where(eq(memories.crushId, active.id)),
+    ...(sessionIds.length ? [db.delete(messages).where(inArray(messages.sessionId, sessionIds))] : []),
+    db.delete(chatSessions).where(eq(chatSessions.crushId, active.id)),
+  ]);
+
+  const [profile] = await db
+    .update(crushProfiles)
+    .set({
+      status: "destroyed",
+      updatedAt: new Date(),
+    })
+    .where(eq(crushProfiles.id, active.id))
+    .returning();
+
+  return profile;
 }
