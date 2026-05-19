@@ -16,6 +16,8 @@ import {
   createDevProfileDraft,
   createDevQuickPractice,
   createDevRealityEvent,
+  createDevRealityInferences,
+  createDevRealitySignals,
   destroyDevCrush,
   finishDevSimulation,
   getActiveDevCrush,
@@ -32,6 +34,8 @@ import {
   getDevPracticeChaptersForCrush,
   getDevProfileDraft,
   getDevRealityEvents,
+  getDevRealityInferences,
+  getDevRealitySignals,
   getDevSessionById,
   getDevSuggestions,
   getDevSuggestionById,
@@ -62,6 +66,8 @@ import {
   profileUpdateSuggestions,
   realActions,
   realityEvents,
+  realityInferences,
+  realitySignals,
   users,
   userSettings,
   visualAssets,
@@ -136,12 +142,45 @@ type PersistedPracticeChapter = {
 
 type RealityEventOutput = {
   id: string;
+  sourceType?: string | null;
   sourceMessageId?: string | null;
   eventText: string;
   eventType: string;
   occurredAtText?: string | null;
+  extractionJson?: Record<string, unknown>;
   status: string;
   createdAt: string | Date;
+};
+
+type RealitySignalOutput = {
+  id: string;
+  eventId?: string | null;
+  signalType: string;
+  label: string;
+  description?: string | null;
+  polarity: string;
+  confidence: number | null;
+  evidenceJson?: Record<string, unknown>;
+  status: string;
+  createdAt: string | Date;
+};
+
+type RealityInferenceOutput = {
+  id: string;
+  eventId?: string | null;
+  inferenceType: string;
+  label: string;
+  description?: string | null;
+  confidence: number | null;
+  evidenceJson?: Record<string, unknown>;
+  status: string;
+  createdAt: string | Date;
+};
+
+type RealityLayerOutput = {
+  realityEvents: RealityEventOutput[];
+  realitySignals: RealitySignalOutput[];
+  realityInferences: RealityInferenceOutput[];
 };
 
 function asNumber(value: string | number | null | undefined) {
@@ -184,9 +223,116 @@ function getCoachTipFromMessage(message: { metadataJson?: unknown }) {
   return Object.keys(coachTip).length ? coachTip : null;
 }
 
+function buildActionFeedbackEventText(input: {
+  status: string;
+  feedbackText?: string | null;
+  actionTitle: string;
+  suggestedMessage?: string | null;
+  chapterTitle?: string | null;
+  chapterBackground?: string | null;
+  chapterSummary?: string | null;
+}) {
+  const feedbackText = input.feedbackText?.trim();
+  const parts = [
+    feedbackText || `用户更新行动结果为：${actionStatusLabel(input.status)}`,
+    `行动：${input.actionTitle}`,
+    input.suggestedMessage ? `原建议：${truncateForRealityContext(input.suggestedMessage)}` : null,
+    input.chapterTitle ? `关联演练：${input.chapterTitle}` : null,
+    input.chapterBackground ? `演练背景：${truncateForRealityContext(input.chapterBackground)}` : null,
+    input.chapterSummary ? `演练复盘：${truncateForRealityContext(input.chapterSummary)}` : null,
+  ].filter((part): part is string => Boolean(part));
+
+  return parts.join("\n");
+}
+
+function buildActionFeedbackRealityRows(input: {
+  crushId: string;
+  eventId: string;
+  actionId: string;
+  status: string;
+  feedbackText?: string | null;
+  actionTitle: string;
+  evidenceJson: Record<string, unknown>;
+}) {
+  const polarity = actionStatusPolarity(input.status);
+  const confidence = actionStatusConfidence(input.status);
+  const feedbackText = input.feedbackText?.trim();
+  const signalDescription = feedbackText
+    ? `用户反馈：${feedbackText}`
+    : `用户把行动「${input.actionTitle}」标记为${actionStatusLabel(input.status)}`;
+  const inferenceLabel =
+    input.status === "positive_response"
+      ? "互动温度可能升温"
+      : input.status === "cold_response"
+        ? "对方当前回应意愿可能偏低"
+        : input.status === "neutral_response"
+          ? "互动仍需继续观察"
+          : "行动结果尚未形成明确关系判断";
+
+  return {
+    signals: [
+      {
+        crushId: input.crushId,
+        eventId: input.eventId,
+        signalType: "action_outcome",
+        label: actionStatusLabel(input.status),
+        description: signalDescription,
+        polarity,
+        confidence,
+        evidenceJson: input.evidenceJson,
+      },
+    ],
+    inferences: [
+      {
+        crushId: input.crushId,
+        eventId: input.eventId,
+        inferenceType: "relationship_temperature",
+        label: inferenceLabel,
+        description: `基于行动反馈「${actionStatusLabel(input.status)}」形成的保守推断，需要后续现实事件继续验证。`,
+        confidence: Math.max(0.45, confidence - 0.08),
+        evidenceJson: input.evidenceJson,
+        status: "pending" as const,
+      },
+    ],
+  };
+}
+
 function inferOccurredAtText(text: string) {
   const match = text.match(/(刚刚|刚才|今天|昨天|前天|上次|最近|这周|周末|今晚|早上|中午|下午|晚上|那天)/);
   return match?.[1] ?? null;
+}
+
+function actionStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    pending: "尚未执行",
+    sent: "已经行动",
+    positive_response: "对方反馈偏积极",
+    neutral_response: "对方反馈中性",
+    cold_response: "对方反馈偏冷",
+    skipped: "暂未行动",
+  };
+  return labels[status] ?? status;
+}
+
+function actionStatusPolarity(status: string) {
+  if (status === "positive_response") return "positive";
+  if (status === "cold_response") return "negative";
+  return "neutral";
+}
+
+function actionStatusConfidence(status: string) {
+  if (status === "positive_response") return 0.72;
+  if (status === "cold_response") return 0.66;
+  if (status === "neutral_response") return 0.6;
+  return 0.55;
+}
+
+function truncateForRealityContext(text: string | null | undefined, limit = 160) {
+  const trimmed = text?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.length > limit ? `${trimmed.slice(0, limit - 3)}...` : trimmed;
 }
 
 function mapDbDraft<T extends typeof aiProfileDrafts.$inferSelect>(draft: T) {
@@ -1006,22 +1152,32 @@ export async function getCurrentCrushProfileDetail() {
   const { profile, metrics } = await getCurrentUserActiveCrush();
 
   if (!profile) {
-    return { profile, metrics, traits: [], materials: [], visualAssets: [], realityEvents: [] };
+    return {
+      profile,
+      metrics,
+      traits: [],
+      materials: [],
+      visualAssets: [],
+      realityEvents: [],
+      realitySignals: [],
+      realityInferences: [],
+    };
   }
 
   if (!hasDatabaseUrl()) {
+    const realityLayer = await getCurrentRealityLayer(profile.id);
     return {
       profile,
       metrics,
       traits: await getDevTraits(profile.id),
       materials: await getDevMaterials(profile.id),
       visualAssets: await getDevVisualAssets(profile.id),
-      realityEvents: await getCurrentRealityEvents(profile.id),
+      ...realityLayer,
     };
   }
 
   const db = getDb();
-  const [traits, materials, assets, events] = await Promise.all([
+  const [traits, materials, assets, realityLayer] = await Promise.all([
     db.select().from(crushTraits).where(eq(crushTraits.crushId, profile.id)).orderBy(asc(crushTraits.createdAt)),
     db
       .select()
@@ -1029,7 +1185,7 @@ export async function getCurrentCrushProfileDetail() {
       .where(eq(onboardingMaterials.crushId, profile.id))
       .orderBy(asc(onboardingMaterials.createdAt)),
     db.select().from(visualAssets).where(eq(visualAssets.crushId, profile.id)).orderBy(asc(visualAssets.createdAt)),
-    getCurrentRealityEvents(profile.id),
+    getCurrentRealityLayer(profile.id),
   ]);
 
   return {
@@ -1038,7 +1194,7 @@ export async function getCurrentCrushProfileDetail() {
     traits: traits.map(mapDbTrait),
     materials,
     visualAssets: assets,
-    realityEvents: events,
+    ...realityLayer,
   };
 }
 
@@ -1144,17 +1300,25 @@ export async function getCurrentCompanionChat() {
   const { profile: active } = await getCurrentUserActiveCrush();
 
   if (!active) {
-    return { profile: null, session: null, messages: [], practiceChapters: [], realityEvents: [] };
+    return {
+      profile: null,
+      session: null,
+      messages: [],
+      practiceChapters: [],
+      realityEvents: [],
+      realitySignals: [],
+      realityInferences: [],
+    };
   }
 
   if (!hasDatabaseUrl()) {
     const session = await getOrCreateDevSession(active.id, "companion", "甜蜜陪伴");
     const sessionMessages = await getDevMessages(session.id);
-    const [chapters, events] = await Promise.all([
+    const [chapters, realityLayer] = await Promise.all([
       getCurrentPracticeChapters(active.id),
-      getCurrentRealityEvents(active.id),
+      getCurrentRealityLayer(active.id),
     ]);
-    return { profile: active, session, messages: sessionMessages, practiceChapters: chapters, realityEvents: events };
+    return { profile: active, session, messages: sessionMessages, practiceChapters: chapters, ...realityLayer };
   }
 
   const db = getDb();
@@ -1165,11 +1329,11 @@ export async function getCurrentCompanionChat() {
     .where(eq(messages.sessionId, session.id))
     .orderBy(asc(messages.createdAt));
 
-  const [chapters, events] = await Promise.all([
+  const [chapters, realityLayer] = await Promise.all([
     getCurrentPracticeChapters(active.id),
-    getCurrentRealityEvents(active.id),
+    getCurrentRealityLayer(active.id),
   ]);
-  return { profile: active, session, messages: sessionMessages, practiceChapters: chapters, realityEvents: events };
+  return { profile: active, session, messages: sessionMessages, practiceChapters: chapters, ...realityLayer };
 }
 
 async function getCurrentPracticeChapters(crushId: string): Promise<PersistedPracticeChapter[]> {
@@ -1300,10 +1464,12 @@ async function getCurrentRealityEvents(crushId: string): Promise<RealityEventOut
       .filter((event) => event.status === "confirmed")
       .map((event) => ({
         id: event.id,
+        sourceType: event.sourceType,
         sourceMessageId: event.sourceMessageId ?? null,
         eventText: event.eventText,
         eventType: event.eventType,
         occurredAtText: event.occurredAtText ?? null,
+        extractionJson: event.extractionJson,
         status: event.status,
         createdAt: event.createdAt,
       }))
@@ -1318,13 +1484,103 @@ async function getCurrentRealityEvents(crushId: string): Promise<RealityEventOut
 
   return events.map((event) => ({
     id: event.id,
+    sourceType: event.sourceType,
     sourceMessageId: event.sourceMessageId,
     eventText: event.eventText,
     eventType: event.eventType,
     occurredAtText: event.occurredAtText,
+    extractionJson: asRecord(event.extractionJson),
     status: event.status,
     createdAt: event.createdAt,
   }));
+}
+
+async function getCurrentRealitySignals(crushId: string): Promise<RealitySignalOutput[]> {
+  if (!hasDatabaseUrl()) {
+    const signals = await getDevRealitySignals(crushId);
+    return signals
+      .filter((signal) => signal.status === "active")
+      .map((signal) => ({
+        id: signal.id,
+        eventId: signal.eventId ?? null,
+        signalType: signal.signalType,
+        label: signal.label,
+        description: signal.description ?? null,
+        polarity: signal.polarity,
+        confidence: signal.confidence,
+        evidenceJson: signal.evidenceJson,
+        status: signal.status,
+        createdAt: signal.createdAt,
+      }))
+      .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
+  }
+
+  const signals = await getDb()
+    .select()
+    .from(realitySignals)
+    .where(and(eq(realitySignals.crushId, crushId), eq(realitySignals.status, "active")))
+    .orderBy(asc(realitySignals.createdAt));
+
+  return signals.map((signal) => ({
+    id: signal.id,
+    eventId: signal.eventId,
+    signalType: signal.signalType,
+    label: signal.label,
+    description: signal.description,
+    polarity: signal.polarity,
+    confidence: asNumber(signal.confidence),
+    evidenceJson: asRecord(signal.evidenceJson),
+    status: signal.status,
+    createdAt: signal.createdAt,
+  }));
+}
+
+async function getCurrentRealityInferences(crushId: string): Promise<RealityInferenceOutput[]> {
+  if (!hasDatabaseUrl()) {
+    const inferences = await getDevRealityInferences(crushId);
+    return inferences
+      .filter((inference) => inference.status !== "dismissed")
+      .map((inference) => ({
+        id: inference.id,
+        eventId: inference.eventId ?? null,
+        inferenceType: inference.inferenceType,
+        label: inference.label,
+        description: inference.description ?? null,
+        confidence: inference.confidence,
+        evidenceJson: inference.evidenceJson,
+        status: inference.status,
+        createdAt: inference.createdAt,
+      }))
+      .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
+  }
+
+  const inferences = await getDb()
+    .select()
+    .from(realityInferences)
+    .where(and(eq(realityInferences.crushId, crushId), eq(realityInferences.status, "pending")))
+    .orderBy(asc(realityInferences.createdAt));
+
+  return inferences.map((inference) => ({
+    id: inference.id,
+    eventId: inference.eventId,
+    inferenceType: inference.inferenceType,
+    label: inference.label,
+    description: inference.description,
+    confidence: asNumber(inference.confidence),
+    evidenceJson: asRecord(inference.evidenceJson),
+    status: inference.status,
+    createdAt: inference.createdAt,
+  }));
+}
+
+async function getCurrentRealityLayer(crushId: string): Promise<RealityLayerOutput> {
+  const [realityEvents, realitySignals, realityInferences] = await Promise.all([
+    getCurrentRealityEvents(crushId),
+    getCurrentRealitySignals(crushId),
+    getCurrentRealityInferences(crushId),
+  ]);
+
+  return { realityEvents, realitySignals, realityInferences };
 }
 
 export async function createCurrentRealityEvent(input: {
@@ -1407,6 +1663,8 @@ export async function sendCurrentCompanionMessage(
     interactionTemperature?: string;
     recentPracticeSummary?: string;
     recentRealityEvents?: RealityEventOutput[];
+    recentRealitySignals?: RealitySignalOutput[];
+    recentRealityInferences?: RealityInferenceOutput[];
   },
 ) {
   const { profile: active } = await getCurrentUserActiveCrush();
@@ -1422,10 +1680,29 @@ export async function sendCurrentCompanionMessage(
     ? await addDbMessage({ sessionId: session.id, role: "user", content: message })
     : await addDevMessage({ sessionId: session.id, role: "user", content: message });
 
-  const recentEvents = context?.recentRealityEvents ?? (await getCurrentRealityEvents(active.id));
+  const realityLayer = context?.recentRealityEvents
+    ? {
+        realityEvents: context.recentRealityEvents,
+        realitySignals: context.recentRealitySignals ?? [],
+        realityInferences: context.recentRealityInferences ?? [],
+      }
+    : await getCurrentRealityLayer(active.id);
+  const recentEvents = realityLayer.realityEvents;
   const recentRealityEvents = recentEvents.slice(-3).map((event) => ({
     eventText: event.eventText,
     occurredAtText: event.occurredAtText,
+  }));
+  const recentRealitySignals = realityLayer.realitySignals.slice(-3).map((signal) => ({
+    label: signal.label,
+    description: signal.description,
+    polarity: signal.polarity,
+    confidence: signal.confidence,
+  }));
+  const recentRealityInferences = realityLayer.realityInferences.slice(-3).map((inference) => ({
+    label: inference.label,
+    description: inference.description,
+    confidence: inference.confidence,
+    status: inference.status,
   }));
 
   let reply: string;
@@ -1440,6 +1717,8 @@ export async function sendCurrentCompanionMessage(
         interactionTemperature: context?.interactionTemperature ?? active.interactionTemperature,
         recentPracticeSummary: context?.recentPracticeSummary,
         recentRealityEvents,
+        recentRealitySignals,
+        recentRealityInferences,
       },
     );
   } catch {
@@ -1677,8 +1956,16 @@ export async function startCurrentSimulation(input: {
     throw new Error("No active Crush profile.");
   }
 
+  const realityLayer = await getCurrentRealityLayer(active.id);
+  const realityContextJson = {
+    background: input.background,
+    recentRealityEvents: realityLayer.realityEvents.slice(-5),
+    recentRealitySignals: realityLayer.realitySignals.slice(-5),
+    recentRealityInferences: realityLayer.realityInferences.slice(-5),
+  };
+
   if (!hasDatabaseUrl()) {
-    return startDevSimulation({ crushId: active.id, ...input });
+    return startDevSimulation({ crushId: active.id, ...input, realityContextJson });
   }
 
   const db = getDb();
@@ -1708,7 +1995,7 @@ export async function startCurrentSimulation(input: {
       triggerSource: "user_click",
       status: "active",
       startMessageId: startMessage?.id ?? null,
-      realityContextJson: { background: input.background },
+      realityContextJson,
     })
     .returning();
 
@@ -1873,6 +2160,149 @@ export async function getCurrentActionsAndSuggestions() {
   };
 }
 
+async function createDevActionFeedbackRealityLayer(
+  action: {
+    id: string;
+    crushId: string;
+    practiceRunId?: string | null;
+    title: string;
+    suggestedMessage?: string | null;
+  },
+  input: {
+    status: string;
+    feedbackText?: string | null;
+  },
+) {
+  const chapters = action.practiceRunId ? await getDevPracticeChaptersForCrush(action.crushId) : [];
+  const chapter = chapters.find((item) => item.practiceRunId === action.practiceRunId) ?? null;
+  const chapterBackground = getBackgroundFromContext(chapter?.realityContextJson);
+  const chapterSummary = asSummary(chapter?.recapJson)?.summary ?? null;
+  const evidenceJson = {
+    sourceType: "action_feedback",
+    actionId: action.id,
+    practiceRunId: action.practiceRunId ?? null,
+    practiceChapterId: chapter?.id ?? null,
+    status: input.status,
+    feedbackText: input.feedbackText?.trim() || null,
+    actionTitle: action.title,
+    suggestedMessage: action.suggestedMessage ?? null,
+    chapterTitle: chapter?.title ?? null,
+    chapterBackground: chapterBackground || null,
+    chapterSummary,
+  };
+  const eventText = buildActionFeedbackEventText({
+    status: input.status,
+    feedbackText: input.feedbackText,
+    actionTitle: action.title,
+    suggestedMessage: action.suggestedMessage,
+    chapterTitle: chapter?.title,
+    chapterBackground,
+    chapterSummary,
+  });
+  const realityEvent = await createDevRealityEvent({
+    crushId: action.crushId,
+    sourceType: "action_feedback",
+    eventType: "action_feedback",
+    eventText,
+    occurredAtText: inferOccurredAtText(input.feedbackText || eventText),
+    extractionJson: evidenceJson,
+  });
+  const rows = buildActionFeedbackRealityRows({
+    crushId: action.crushId,
+    eventId: realityEvent.id,
+    actionId: action.id,
+    status: input.status,
+    feedbackText: input.feedbackText,
+    actionTitle: action.title,
+    evidenceJson,
+  });
+  const realitySignals = await createDevRealitySignals(rows.signals);
+  const realityInferences = await createDevRealityInferences(rows.inferences);
+
+  return { realityEvent, realitySignals, realityInferences };
+}
+
+async function createDbActionFeedbackRealityLayer(
+  action: typeof realActions.$inferSelect,
+  input: {
+    status: string;
+    feedbackText?: string | null;
+  },
+) {
+  const db = getDb();
+  const [chapter] = action.practiceRunId
+    ? await db
+        .select()
+        .from(practiceChapters)
+        .where(eq(practiceChapters.practiceRunId, action.practiceRunId))
+        .limit(1)
+    : [null];
+  const chapterBackground = getBackgroundFromContext(chapter?.realityContextJson);
+  const chapterSummary = asSummary(chapter?.recapJson)?.summary ?? null;
+  const evidenceJson = {
+    sourceType: "action_feedback",
+    actionId: action.id,
+    practiceRunId: action.practiceRunId ?? null,
+    practiceChapterId: chapter?.id ?? null,
+    status: input.status,
+    feedbackText: input.feedbackText?.trim() || null,
+    actionTitle: action.title,
+    suggestedMessage: action.suggestedMessage ?? null,
+    chapterTitle: chapter?.title ?? null,
+    chapterBackground: chapterBackground || null,
+    chapterSummary,
+  };
+  const eventText = buildActionFeedbackEventText({
+    status: input.status,
+    feedbackText: input.feedbackText,
+    actionTitle: action.title,
+    suggestedMessage: action.suggestedMessage,
+    chapterTitle: chapter?.title,
+    chapterBackground,
+    chapterSummary,
+  });
+  const [realityEvent] = await db
+    .insert(realityEvents)
+    .values({
+      crushId: action.crushId,
+      sourceType: "action_feedback",
+      sourceMessageId: null,
+      eventType: "action_feedback",
+      eventText,
+      occurredAtText: inferOccurredAtText(input.feedbackText || eventText),
+      extractionJson: evidenceJson,
+    })
+    .returning();
+  const rows = buildActionFeedbackRealityRows({
+    crushId: action.crushId,
+    eventId: realityEvent.id,
+    actionId: action.id,
+    status: input.status,
+    feedbackText: input.feedbackText,
+    actionTitle: action.title,
+    evidenceJson,
+  });
+  const [insertedSignals, insertedInferences] = await Promise.all([
+    db.insert(realitySignals).values(rows.signals.map((row) => ({ ...row, confidence: String(row.confidence) }))).returning(),
+    db
+      .insert(realityInferences)
+      .values(rows.inferences.map((row) => ({ ...row, confidence: String(row.confidence) })))
+      .returning(),
+  ]);
+
+  return {
+    realityEvent,
+    realitySignals: insertedSignals.map((signal) => ({
+      ...signal,
+      confidence: asNumber(signal.confidence),
+    })),
+    realityInferences: insertedInferences.map((inference) => ({
+      ...inference,
+      confidence: asNumber(inference.confidence),
+    })),
+  };
+}
+
 export async function updateCurrentAction(
   actionId: string,
   input: {
@@ -1886,7 +2316,12 @@ export async function updateCurrentAction(
   }
 
   if (!hasDatabaseUrl()) {
-    return updateDevAction(actionId, input);
+    const result = await updateDevAction(actionId, input);
+    if (!result) {
+      return null;
+    }
+    const realityLayer = await createDevActionFeedbackRealityLayer(result.action, input);
+    return { ...result, ...realityLayer };
   }
 
   const db = getDb();
@@ -1927,7 +2362,9 @@ export async function updateCurrentAction(
     }));
   }
 
-  return { action, suggestion: mapDbSuggestion(suggestion) };
+  const realityLayer = await createDbActionFeedbackRealityLayer(action, input);
+
+  return { action, suggestion: mapDbSuggestion(suggestion), ...realityLayer };
 }
 
 export async function resolveCurrentSuggestion(id: string, decision: "accepted" | "rejected") {

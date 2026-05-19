@@ -223,6 +223,39 @@ export const realityEvents = pgTable("reality_events", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const realitySignals = pgTable("reality_signals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  crushId: uuid("crush_id")
+    .notNull()
+    .references(() => crushProfiles.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").references(() => realityEvents.id, { onDelete: "cascade" }),
+  signalType: text("signal_type").notNull().default("interaction"),
+  label: text("label").notNull(),
+  description: text("description"),
+  polarity: text("polarity").notNull().default("neutral"),
+  confidence: numeric("confidence").notNull().default("0.5"),
+  evidenceJson: jsonb("evidence_json").notNull().default({}),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const realityInferences = pgTable("reality_inferences", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  crushId: uuid("crush_id")
+    .notNull()
+    .references(() => crushProfiles.id, { onDelete: "cascade" }),
+  eventId: uuid("event_id").references(() => realityEvents.id, { onDelete: "cascade" }),
+  inferenceType: text("inference_type").notNull().default("relationship_state"),
+  label: text("label").notNull(),
+  description: text("description"),
+  confidence: numeric("confidence").notNull().default("0.5"),
+  evidenceJson: jsonb("evidence_json").notNull().default({}),
+  status: text("status").notNull().default("pending"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const realActions = pgTable("real_actions", {
   id: uuid("id").primaryKey().defaultRandom(),
   crushId: uuid("crush_id")

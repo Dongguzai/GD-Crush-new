@@ -396,6 +396,8 @@ Acceptance:
 
 ### [P1] M4.3 Upgrade action feedback into reality feedback
 
+Status: Implemented on 2026-05-19
+
 Dependencies: M4.2
 
 Scope:

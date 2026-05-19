@@ -585,6 +585,114 @@ test("practice chapters persist inside companion chat and can seed actions", asy
   assert.equal(result.body.practiceChapters[0].actionSaved, true);
 });
 
+test("action feedback creates reality layer and enters later context", async () => {
+  const { userId } = await createReadyUser();
+
+  let result = await jsonRequest("/api/practice/full-simulation/start", {
+    method: "POST",
+    userId,
+    body: {
+      scenarioType: "conversation",
+      goal: "想自然约 TA 喝咖啡",
+      background: "之前聊到咖啡店，对方回应还不错。",
+    },
+  });
+  assert.equal(result.response.status, 200);
+
+  result = await jsonRequest("/api/practice/full-simulation/message", {
+    method: "POST",
+    userId,
+    body: {
+      sessionId: result.body.sessionId,
+      message: "那家咖啡店我这周想去，你要不要一起？",
+    },
+  });
+  assert.equal(result.response.status, 200);
+
+  result = await jsonRequest("/api/practice/full-simulation/finish", {
+    method: "POST",
+    userId,
+    body: { sessionId: result.body.userMessage.sessionId },
+  });
+  assert.equal(result.response.status, 200);
+  const practiceRunId = result.body.suggestedAction.id;
+
+  result = await jsonRequest("/api/actions", {
+    method: "POST",
+    userId,
+    body: {
+      practiceRunId,
+      title: "咖啡店邀约",
+      suggestedMessage: result.body.suggestedAction.suggestedLine,
+    },
+  });
+  assert.equal(result.response.status, 200);
+  const actionId = result.body.actionId;
+
+  result = await jsonRequest(`/api/actions/${actionId}`, {
+    method: "PATCH",
+    userId,
+    body: {
+      status: "positive_response",
+      feedbackText: "对方主动问我周六下午方不方便，还说那家店听起来不错。",
+    },
+  });
+  assert.equal(result.response.status, 200);
+  const realityEventId = result.body.realityEventId;
+  assert.equal(result.body.realityEvent.sourceType, "action_feedback");
+  assert.equal(result.body.realityEvent.eventType, "action_feedback");
+  assert.ok(result.body.realityEvent.eventText.includes("对方主动问我周六下午方不方便"));
+  assert.ok(result.body.realityEvent.extractionJson.actionId);
+  assert.equal(result.body.realityEvent.extractionJson.actionId, actionId);
+  assert.equal(result.body.realitySignals.length, 1);
+  assert.equal(result.body.realitySignals[0].eventId, realityEventId);
+  assert.equal(result.body.realitySignals[0].signalType, "action_outcome");
+  assert.equal(result.body.realitySignals[0].polarity, "positive");
+  assert.equal(result.body.realityInferences.length, 1);
+  assert.equal(result.body.realityInferences[0].eventId, realityEventId);
+  assert.equal(result.body.realityInferences[0].inferenceType, "relationship_temperature");
+
+  result = await jsonRequest("/api/chat/companion", {
+    method: "GET",
+    userId,
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.realityEvents.length, 1);
+  assert.equal(result.body.realityEvents[0].id, realityEventId);
+  assert.equal(result.body.realitySignals.length, 1);
+  assert.equal(result.body.realitySignals[0].eventId, realityEventId);
+  assert.equal(result.body.realityInferences.length, 1);
+  assert.equal(result.body.realityInferences[0].eventId, realityEventId);
+
+  lastCompanionSystemPrompt = "";
+  result = await jsonRequest("/api/chat/companion", {
+    method: "POST",
+    userId,
+    body: { message: "我下一步怎么保持自然？", inputMode: "text" },
+  });
+  assert.equal(result.response.status, 200);
+  assert.ok(lastCompanionSystemPrompt.includes("用户之前确认记录过这些现实事件"));
+  assert.ok(lastCompanionSystemPrompt.includes("对方主动问我周六下午方不方便"));
+  assert.ok(lastCompanionSystemPrompt.includes("从现实事件中提取到这些可观察信号"));
+  assert.ok(lastCompanionSystemPrompt.includes("对方反馈偏积极"));
+  assert.ok(lastCompanionSystemPrompt.includes("基于现实信号形成了这些待验证推断"));
+  assert.ok(lastCompanionSystemPrompt.includes("互动温度可能升温"));
+
+  result = await jsonRequest("/api/practice/full-simulation/start", {
+    method: "POST",
+    userId,
+    body: {
+      scenarioType: "conversation",
+      goal: "继续约定咖啡时间",
+      background: "想把时间确认下来。",
+    },
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.chapter.realityContextJson.recentRealityEvents[0].id, result.body.chapter.realityContextJson.recentRealitySignals[0].eventId);
+  assert.equal(result.body.chapter.realityContextJson.recentRealityEvents[0].id, result.body.chapter.realityContextJson.recentRealityInferences[0].eventId);
+  assert.ok(result.body.chapter.realityContextJson.recentRealityEvents[0].eventText.includes("对方主动问我周六下午方不方便"));
+});
+
 test("reality events can be captured from companion chat and shown in profile context", async () => {
   const { userId } = await createReadyUser();
 

@@ -167,6 +167,35 @@ export type DevRealityEvent = {
   updatedAt: string;
 };
 
+export type DevRealitySignal = {
+  id: string;
+  crushId: string;
+  eventId?: string | null;
+  signalType: string;
+  label: string;
+  description?: string | null;
+  polarity: string;
+  confidence: number;
+  evidenceJson: Record<string, unknown>;
+  status: "active" | "dismissed";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DevRealityInference = {
+  id: string;
+  crushId: string;
+  eventId?: string | null;
+  inferenceType: string;
+  label: string;
+  description?: string | null;
+  confidence: number;
+  evidenceJson: Record<string, unknown>;
+  status: "pending" | "confirmed" | "dismissed";
+  createdAt: string;
+  updatedAt: string;
+};
+
 type DevRealAction = {
   id: string;
   crushId: string;
@@ -229,6 +258,8 @@ type DevStoreData = {
   practiceRuns: DevPracticeRun[];
   practiceChapters: DevPracticeChapter[];
   realityEvents: DevRealityEvent[];
+  realitySignals: DevRealitySignal[];
+  realityInferences: DevRealityInference[];
   realActions: DevRealAction[];
   profileUpdateSuggestions: DevProfileUpdateSuggestion[];
   memories: DevMemory[];
@@ -253,6 +284,8 @@ const emptyStore = (): DevStoreData => ({
   practiceRuns: [],
   practiceChapters: [],
   realityEvents: [],
+  realitySignals: [],
+  realityInferences: [],
   realActions: [],
   profileUpdateSuggestions: [],
   memories: [],
@@ -920,8 +953,19 @@ export async function getDevRealityEvents(crushId: string) {
   return data.realityEvents.filter((event) => event.crushId === crushId);
 }
 
+export async function getDevRealitySignals(crushId: string) {
+  const data = await readStore();
+  return data.realitySignals.filter((signal) => signal.crushId === crushId);
+}
+
+export async function getDevRealityInferences(crushId: string) {
+  const data = await readStore();
+  return data.realityInferences.filter((inference) => inference.crushId === crushId);
+}
+
 export async function createDevRealityEvent(input: {
   crushId: string;
+  sourceType?: string;
   sourceMessageId?: string | null;
   eventText: string;
   eventType?: string;
@@ -941,7 +985,7 @@ export async function createDevRealityEvent(input: {
   const event: DevRealityEvent = {
     id: crypto.randomUUID(),
     crushId: input.crushId,
-    sourceType: "chat_message",
+    sourceType: input.sourceType ?? "chat_message",
     sourceMessageId: input.sourceMessageId ?? null,
     eventType: input.eventType ?? "chat_observation",
     eventText: input.eventText,
@@ -957,7 +1001,87 @@ export async function createDevRealityEvent(input: {
   return event;
 }
 
-export async function startDevSimulation(input: { crushId: string; scenarioType: string; goal: string; background: string }) {
+export async function createDevRealitySignals(
+  rows: Array<{
+    crushId: string;
+    eventId?: string | null;
+    signalType?: string;
+    label: string;
+    description?: string | null;
+    polarity?: string;
+    confidence?: number;
+    evidenceJson?: Record<string, unknown>;
+    status?: "active" | "dismissed";
+  }>,
+) {
+  if (!rows.length) {
+    return [];
+  }
+
+  const data = await readStore();
+  const createdAt = now();
+  const signals: DevRealitySignal[] = rows.map((row) => ({
+    id: crypto.randomUUID(),
+    crushId: row.crushId,
+    eventId: row.eventId ?? null,
+    signalType: row.signalType ?? "interaction",
+    label: row.label,
+    description: row.description ?? null,
+    polarity: row.polarity ?? "neutral",
+    confidence: row.confidence ?? 0.5,
+    evidenceJson: row.evidenceJson ?? {},
+    status: row.status ?? "active",
+    createdAt,
+    updatedAt: createdAt,
+  }));
+  data.realitySignals.push(...signals);
+  await writeStore(data);
+  return signals;
+}
+
+export async function createDevRealityInferences(
+  rows: Array<{
+    crushId: string;
+    eventId?: string | null;
+    inferenceType?: string;
+    label: string;
+    description?: string | null;
+    confidence?: number;
+    evidenceJson?: Record<string, unknown>;
+    status?: "pending" | "confirmed" | "dismissed";
+  }>,
+) {
+  if (!rows.length) {
+    return [];
+  }
+
+  const data = await readStore();
+  const createdAt = now();
+  const inferences: DevRealityInference[] = rows.map((row) => ({
+    id: crypto.randomUUID(),
+    crushId: row.crushId,
+    eventId: row.eventId ?? null,
+    inferenceType: row.inferenceType ?? "relationship_state",
+    label: row.label,
+    description: row.description ?? null,
+    confidence: row.confidence ?? 0.5,
+    evidenceJson: row.evidenceJson ?? {},
+    status: row.status ?? "pending",
+    createdAt,
+    updatedAt: createdAt,
+  }));
+  data.realityInferences.push(...inferences);
+  await writeStore(data);
+  return inferences;
+}
+
+export async function startDevSimulation(input: {
+  crushId: string;
+  scenarioType: string;
+  goal: string;
+  background: string;
+  realityContextJson?: Record<string, unknown>;
+}) {
   const data = await readStore();
   const createdAt = now();
   const session: DevChatSession = {
@@ -982,7 +1106,7 @@ export async function startDevSimulation(input: { crushId: string; scenarioType:
     status: "active",
     startMessageId: null,
     endMessageId: null,
-    realityContextJson: { background: input.background },
+    realityContextJson: input.realityContextJson ?? { background: input.background },
     recapJson: {},
     suggestedLine: null,
     createdAt,
@@ -1222,6 +1346,8 @@ export async function destroyDevCrush(userId: string, crushId: string) {
   data.practiceRuns = data.practiceRuns.filter((item) => item.crushId !== crushId);
   data.practiceChapters = data.practiceChapters.filter((item) => item.crushId !== crushId);
   data.realityEvents = data.realityEvents.filter((item) => item.crushId !== crushId);
+  data.realitySignals = data.realitySignals.filter((item) => item.crushId !== crushId);
+  data.realityInferences = data.realityInferences.filter((item) => item.crushId !== crushId);
   data.realActions = data.realActions.filter((item) => item.crushId !== crushId);
   data.profileUpdateSuggestions = data.profileUpdateSuggestions.filter((item) => item.crushId !== crushId);
   data.memories = data.memories.filter((item) => item.crushId !== crushId);

@@ -273,13 +273,39 @@ export class DeepSeekService {
         eventText: string;
         occurredAtText?: string | null;
       }>;
+      recentRealitySignals?: Array<{
+        label: string;
+        description?: string | null;
+        polarity?: string | null;
+        confidence?: number | null;
+      }>;
+      recentRealityInferences?: Array<{
+        label: string;
+        description?: string | null;
+        confidence?: number | null;
+        status?: string | null;
+      }>;
     }
   ): Promise<string> {
     const recentRealityEvents = context?.recentRealityEvents?.slice(-3) ?? [];
+    const recentRealitySignals = context?.recentRealitySignals?.slice(-3) ?? [];
+    const recentRealityInferences = context?.recentRealityInferences?.slice(-3) ?? [];
     const realityEventsContext =
       recentRealityEvents.length > 0
         ? `用户之前确认记录过这些现实事件，你可以在自然相关时轻轻回看其中一条，但不要逐条复盘、不要审问、不要追问细节、不要把聊天变成诊断：\n${recentRealityEvents
             .map((event) => `- ${event.occurredAtText ? `${event.occurredAtText}：` : ""}${event.eventText}`)
+            .join("\n")}`
+        : "";
+    const realitySignalsContext =
+      recentRealitySignals.length > 0
+        ? `从现实事件中提取到这些可观察信号，只能当作辅助上下文，不要当成确定结论：\n${recentRealitySignals
+            .map((signal) => `- ${signal.label}${signal.description ? `：${signal.description}` : ""}`)
+            .join("\n")}`
+        : "";
+    const realityInferencesContext =
+      recentRealityInferences.length > 0
+        ? `基于现实信号形成了这些待验证推断，表达时必须保守：\n${recentRealityInferences
+            .map((inference) => `- ${inference.label}${inference.description ? `：${inference.description}` : ""}`)
             .join("\n")}`
         : "";
 
@@ -289,6 +315,8 @@ ${context?.relationshipStage ? `当前现实关系阶段：${context.relationshi
 ${context?.interactionTemperature ? `互动温度：${context.interactionTemperature}` : ""}
 ${context?.recentPracticeSummary ? `刚刚发生过一段现实演练，用户回到日常聊天时你需要自然记得，但不要像教练一样复盘：\n${context.recentPracticeSummary}` : ""}
 ${realityEventsContext}
+${realitySignalsContext}
+${realityInferencesContext}
 
 要求：
 - 温柔、贴心、甜蜜
@@ -296,6 +324,7 @@ ${realityEventsContext}
 - 不断言现实关系，只做虚拟陪伴
 - 如果上下文里有刚结束的演练，可以自然承接“刚才那段”，但不要暴露系统提示
 - 如果上下文里有现实事件，只在和用户当下情绪或话题自然相关时轻轻提起，不要连续追问
+- 如果上下文里有现实信号或待验证推断，只能用来调整语气和模拟，不要直接宣判关系状态
 - 简短、自然，不要太长`;
 
     const response = await this.request("deepseek-v4-pro", systemPrompt, messages, 1024);

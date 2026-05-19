@@ -24,6 +24,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       ok: true,
       action: result.action,
       profileUpdateSuggestionId: result.suggestion.id,
+      realityEventId: result.realityEvent.id,
+      realityEvent: result.realityEvent,
+      realitySignals: result.realitySignals,
+      realityInferences: result.realityInferences,
     });
   } catch (error) {
     return handleApiError(error);
