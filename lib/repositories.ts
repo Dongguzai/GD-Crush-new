@@ -1298,6 +1298,17 @@ export async function generateCurrentCrushSceneAsset(input: {
 
 export async function getCurrentCompanionChat() {
   const { profile: active } = await getCurrentUserActiveCrush();
+  const userId = await getCurrentUserId();
+
+  // Get user settings
+  let userSettings: UserSettings | null = null;
+  if (userId) {
+    try {
+      userSettings = await getOrCreateUserSettings(userId);
+    } catch {
+      // Settings are optional, continue without them
+    }
+  }
 
   if (!active) {
     return {
@@ -1308,6 +1319,7 @@ export async function getCurrentCompanionChat() {
       realityEvents: [],
       realitySignals: [],
       realityInferences: [],
+      userSettings,
     };
   }
 
@@ -1318,7 +1330,7 @@ export async function getCurrentCompanionChat() {
       getCurrentPracticeChapters(active.id),
       getCurrentRealityLayer(active.id),
     ]);
-    return { profile: active, session, messages: sessionMessages, practiceChapters: chapters, ...realityLayer };
+    return { profile: active, session, messages: sessionMessages, practiceChapters: chapters, ...realityLayer, userSettings };
   }
 
   const db = getDb();
@@ -1333,7 +1345,7 @@ export async function getCurrentCompanionChat() {
     getCurrentPracticeChapters(active.id),
     getCurrentRealityLayer(active.id),
   ]);
-  return { profile: active, session, messages: sessionMessages, practiceChapters: chapters, ...realityLayer };
+  return { profile: active, session, messages: sessionMessages, practiceChapters: chapters, ...realityLayer, userSettings };
 }
 
 async function getCurrentPracticeChapters(crushId: string): Promise<PersistedPracticeChapter[]> {
@@ -2727,6 +2739,91 @@ export async function destroyCurrentCrush(confirmText: string) {
   ]);
 
   return { destroyedAt: destroyedAt.toISOString() };
+}
+
+export async function getOrCreateUserSettings(userId: string) {
+  if (!hasDatabaseUrl()) {
+    return getDevUserSettings(userId);
+  }
+
+  const db = getDb();
+  const existing = await db.query.userSettings.findFirst({
+    where: eq(userSettings.userId, userId),
+  });
+
+  if (existing) {
+    return existing;
+  }
+
+  const [settings] = await db
+    .insert(userSettings)
+    .values({ userId })
+    .returning();
+
+  return settings;
+}
+
+export type UserSettings = Awaited<ReturnType<typeof getOrCreateUserSettings>>;
+
+export async function updateUserSettings(
+  userId: string,
+  input: Partial<{
+    autoPlayCompanionVoice: boolean;
+    voiceSpeed: string;
+    voiceEmotionLevel: string;
+    voiceAgeStyle: string;
+  }>,
+) {
+  if (!hasDatabaseUrl()) {
+    return updateDevUserSettings(userId, input);
+  }
+
+  const db = getDb();
+  const existing = await getOrCreateUserSettings(userId);
+
+  const [updated] = await db
+    .update(userSettings)
+    .set({
+      ...input,
+      updatedAt: new Date(),
+    })
+    .where(eq(userSettings.userId, userId))
+    .returning();
+
+  return updated ?? existing;
+}
+
+// Dev mode stubs
+function getDevUserSettings(userId: string) {
+  return {
+    userId,
+    autoPlayCompanionVoice: true,
+    voiceSpeed: "normal",
+    voiceEmotionLevel: "natural",
+    voiceAgeStyle: "young",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+}
+
+function updateDevUserSettings(
+  userId: string,
+  input: Partial<{
+    autoPlayCompanionVoice: boolean;
+    voiceSpeed: string;
+    voiceEmotionLevel: string;
+    voiceAgeStyle: string;
+  }>,
+) {
+  return {
+    userId,
+    autoPlayCompanionVoice: input.autoPlayCompanionVoice ?? true,
+    voiceSpeed: input.voiceSpeed ?? "normal",
+    voiceEmotionLevel: input.voiceEmotionLevel ?? "natural",
+    voiceAgeStyle: input.voiceAgeStyle ?? "young",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
 }
 
 export { getCurrentPracticeChapters };

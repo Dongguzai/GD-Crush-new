@@ -73,6 +73,12 @@ type CompanionChatPayload = {
   messages: Message[];
   practiceChapters?: PracticeChapter[];
   realityEvents?: RealityEvent[];
+  userSettings?: {
+    autoPlayCompanionVoice: boolean;
+    voiceSpeed: string;
+    voiceEmotionLevel: string;
+    voiceAgeStyle: string;
+  };
 };
 
 function mergeAudioChunks(chunks: Float32Array[]) {
@@ -248,6 +254,10 @@ export function CompanionChat() {
       setMessages(data.messages ?? []);
       setPracticeChapter(latestPracticeChapter(data.practiceChapters));
       setRecordedRealityMessageIds(getRecordedRealityMessageIds(data.realityEvents));
+      // Set autoPlay from user settings if available, otherwise default to true
+      if (data.userSettings !== undefined) {
+        setAutoPlay(data.userSettings.autoPlayCompanionVoice);
+      }
       setLoadState("ready");
     } catch (error) {
       setLoadState("error");
