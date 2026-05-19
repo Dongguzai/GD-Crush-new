@@ -42,6 +42,16 @@ type SuggestedPracticeAction = {
   coachAnalysisJson?: PracticeSummary | null;
 };
 
+type RealityEvent = {
+  id: string;
+  sourceMessageId?: string | null;
+  eventText: string;
+  eventType: string;
+  occurredAtText?: string | null;
+  status: string;
+  createdAt: string | Date;
+};
+
 type PracticeChapter = {
   id: string;
   status: "draft" | "active" | "finished";
@@ -57,6 +67,13 @@ type PracticeChapter = {
 };
 
 type VoiceState = "idle" | "recording" | "processing";
+
+type CompanionChatPayload = {
+  profile: Profile | null;
+  messages: Message[];
+  practiceChapters?: PracticeChapter[];
+  realityEvents?: RealityEvent[];
+};
 
 function mergeAudioChunks(chunks: Float32Array[]) {
   const totalLength = chunks.reduce((length, chunk) => length + chunk.length, 0);
@@ -131,12 +148,53 @@ function buildPracticeSummaryText(chapter: PracticeChapter, summary?: PracticeSu
   return lines.join("\n");
 }
 
+function latestPracticeChapter(chapters?: PracticeChapter[]) {
+  return chapters?.length ? chapters[chapters.length - 1] : null;
+}
+
+function getRecordedRealityMessageIds(events?: RealityEvent[]) {
+  return new Set(events?.map((event) => event.sourceMessageId).filter((id): id is string => Boolean(id)) ?? []);
+}
+
+function shouldSuggestRealityCapture(message: Message) {
+  if (message.role !== "user") {
+    return false;
+  }
+
+  const content = message.content.trim();
+  if (content.length < 8 || content.length > 500) {
+    return false;
+  }
+
+  const pureFeelingPattern =
+    /^(今天|刚刚|刚才|最近)?\s*(有点|很|好)?\s*(累|难过|焦虑|紧张|烦|开心|想你|喜欢你|害怕|不安)[。！？!?\s]*$/;
+  if (pureFeelingPattern.test(content)) {
+    return false;
+  }
+
+  const hasRealityTimeCue =
+    /(刚刚|刚才|今天|昨天|前天|上次|最近|这周|周末|今晚|早上|中午|下午|晚上|那天|现实|微信|朋友圈|上课|下课|见面)/.test(
+      content,
+    );
+  const hasInteractionCue =
+    /(回复|回我|没回|已读|发(了)?消息|说|问|约|见面|碰到|遇到|看见|看了|笑|一起|主动|给我|聊|吃饭|喝咖啡|看展|打电话)/.test(
+      content,
+    );
+  const isMostlySpeculation =
+    /(如果|假如|要是|梦到|幻想|会不会|是不是|可能|也许|我猜|我觉得|我感觉|希望)/.test(content) &&
+    !hasInteractionCue;
+
+  return hasRealityTimeCue && hasInteractionCue && !isMostlySpeculation;
+}
+
 export function CompanionChat() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
   const [autoPlay, setAutoPlay] = useState(true);
   const [practiceChapter, setPracticeChapter] = useState<PracticeChapter | null>(null);
+  const [recordedRealityMessageIds, setRecordedRealityMessageIds] = useState<Set<string>>(new Set());
+  const [recordingRealityMessageId, setRecordingRealityMessageId] = useState<string | null>(null);
   const [practiceBusyLabel, setPracticeBusyLabel] = useState<string | null>(null);
   const [recentPracticeSummary, setRecentPracticeSummary] = useState<string | null>(null);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
@@ -182,12 +240,14 @@ export function CompanionChat() {
 
   const loadMessages = useCallback(async () => {
     try {
-      const data = await readApiResponse<{ profile: Profile | null; messages: Message[] }>(
+      const data = await readApiResponse<CompanionChatPayload>(
         await fetch("/api/chat/companion"),
         "聊天记录加载失败，请稍后重试。",
       );
       setProfile(data.profile ?? null);
       setMessages(data.messages ?? []);
+      setPracticeChapter(latestPracticeChapter(data.practiceChapters));
+      setRecordedRealityMessageIds(getRecordedRealityMessageIds(data.realityEvents));
       setLoadState("ready");
     } catch (error) {
       setLoadState("error");
@@ -206,7 +266,7 @@ export function CompanionChat() {
 
     fetch("/api/chat/companion")
       .then((response) =>
-        readApiResponse<{ profile: Profile | null; messages: Message[] }>(
+        readApiResponse<CompanionChatPayload>(
           response,
           "聊天记录加载失败，请稍后重试。",
         ),
@@ -215,6 +275,8 @@ export function CompanionChat() {
         if (!cancelled) {
           setProfile(data.profile ?? null);
           setMessages(data.messages ?? []);
+          setPracticeChapter(latestPracticeChapter(data.practiceChapters));
+          setRecordedRealityMessageIds(getRecordedRealityMessageIds(data.realityEvents));
           setLoadState("ready");
         }
       })
@@ -338,7 +400,7 @@ export function CompanionChat() {
     setPracticeBusyLabel("正在把现实场景接进当前聊天...");
     startTransition(async () => {
       try {
-        const data = await readApiResponse<{ sessionId: string }>(
+        const data = await readApiResponse<{ sessionId: string; chapter?: { id: string } | null }>(
           await fetch("/api/practice/full-simulation/start", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -350,6 +412,7 @@ export function CompanionChat() {
           current
             ? {
                 ...current,
+                id: data.chapter?.id ?? current.id,
                 status: "active",
                 goal,
                 background,
@@ -662,6 +725,40 @@ export function CompanionChat() {
     });
   }
 
+  async function recordRealityEvent(message: Message) {
+    if (recordedRealityMessageIds.has(message.id) || recordingRealityMessageId === message.id) {
+      return;
+    }
+
+    setChatNotice(null);
+    setRecordingRealityMessageId(message.id);
+    try {
+      await readApiResponse<{ realityEventId: string; realityEvent: RealityEvent }>(
+        await fetch("/api/reality-events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sourceMessageId: message.id }),
+        }),
+        "这件现实里的事还没记上，请稍后重试。",
+      );
+      setRecordedRealityMessageIds((current) => new Set([...current, message.id]));
+      setChatNotice({
+        tone: "success",
+        title: "已记下现实事件",
+        description: "之后演一遍时，会把这件现实里的事纳入参考。",
+      });
+    } catch (error) {
+      setChatNotice({
+        tone: "error",
+        title: "还没记下来",
+        description: getClientErrorMessage(error, "这件现实里的事还没记上，请稍后重试。"),
+        retry: () => recordRealityEvent(message),
+      });
+    } finally {
+      setRecordingRealityMessageId(null);
+    }
+  }
+
   return (
     <div className="mx-auto flex min-h-[calc(100vh-7rem)] w-full max-w-4xl flex-col px-5 py-6 sm:px-8">
       <div className="mb-4 flex items-center justify-between gap-4 rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-blush-100/60 backdrop-blur">
@@ -709,53 +806,71 @@ export function CompanionChat() {
               onAction={retryLoadMessages}
             />
           ) : messages.length ? (
-            messages.map((message, index) => (
-              <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div
-                  className={`max-w-[82%] rounded-[1.5rem] px-4 py-3 text-sm leading-6 shadow-sm ${
-                    message.role === "user"
-                      ? "bg-ink-900 text-white"
-                      : "border border-blush-100 bg-white text-ink-900"
-                  }`}
-                >
-                  <p>{message.content}</p>
-                  {message.role === "crush" ? (
-                    <div className="mt-3 flex items-center gap-2">
-                      {message.audioUrl ? (
-                        <audio
-                          ref={index === messages.length - 1 ? latestAudioRef : undefined}
-                          src={message.audioUrl}
-                        />
-                      ) : null}
-                      <button
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blush-50 text-blush-700"
-                        type="button"
-                        onClick={() => {
-                          if (message.audioUrl) {
-                            const audio = new Audio(message.audioUrl);
-                            audio.play().catch(() => undefined);
-                            return;
-                          }
+            messages.map((message, index) => {
+              const canRecordReality =
+                shouldSuggestRealityCapture(message) && !recordedRealityMessageIds.has(message.id);
 
-                          synthesizeVoice(message);
-                        }}
-                        aria-label="播放语音"
-                      >
-                        <Play aria-hidden="true" size={15} />
-                      </button>
-                      <button
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-sun-100 text-ink-700"
-                        type="button"
-                        onClick={() => favorite(message)}
-                        aria-label="收藏为回忆"
-                      >
-                        <Star aria-hidden="true" size={15} />
-                      </button>
-                    </div>
+              return (
+                <div
+                  key={message.id}
+                  className={`flex flex-col ${message.role === "user" ? "items-end" : "items-start"}`}
+                >
+                  <div
+                    className={`max-w-[82%] rounded-[1.5rem] px-4 py-3 text-sm leading-6 shadow-sm ${
+                      message.role === "user"
+                        ? "bg-ink-900 text-white"
+                        : "border border-blush-100 bg-white text-ink-900"
+                    }`}
+                  >
+                    <p>{message.content}</p>
+                    {message.role === "crush" ? (
+                      <div className="mt-3 flex items-center gap-2">
+                        {message.audioUrl ? (
+                          <audio
+                            ref={index === messages.length - 1 ? latestAudioRef : undefined}
+                            src={message.audioUrl}
+                          />
+                        ) : null}
+                        <button
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blush-50 text-blush-700"
+                          type="button"
+                          onClick={() => {
+                            if (message.audioUrl) {
+                              const audio = new Audio(message.audioUrl);
+                              audio.play().catch(() => undefined);
+                              return;
+                            }
+
+                            synthesizeVoice(message);
+                          }}
+                          aria-label="播放语音"
+                        >
+                          <Play aria-hidden="true" size={15} />
+                        </button>
+                        <button
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-sun-100 text-ink-700"
+                          type="button"
+                          onClick={() => favorite(message)}
+                          aria-label="收藏为回忆"
+                        >
+                          <Star aria-hidden="true" size={15} />
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  {canRecordReality ? (
+                    <button
+                      className="mr-1 mt-1 inline-flex items-center rounded-full border border-blush-100 bg-white/80 px-3 py-1 text-xs font-black text-blush-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-blush-50 disabled:opacity-60"
+                      disabled={recordingRealityMessageId === message.id}
+                      type="button"
+                      onClick={() => recordRealityEvent(message)}
+                    >
+                      {recordingRealityMessageId === message.id ? "记录中..." : "记一下"}
+                    </button>
                   ) : null}
                 </div>
-              </div>
-            ))
+              );
+            })
           ) : profile ? (
             <div className="flex justify-start">
               <div className="max-w-[82%] rounded-[1.5rem] border border-blush-100 bg-white px-4 py-3 text-sm leading-6 text-ink-900 shadow-sm">

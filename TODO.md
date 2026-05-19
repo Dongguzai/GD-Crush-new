@@ -222,6 +222,8 @@ Acceptance:
 
 ### [P0] M3.1 Introduce `practice_chapters`
 
+Status: Implemented in Batch 3
+
 Dependencies: M2.4, M1.1, M1.4
 
 Scope:
@@ -244,7 +246,7 @@ Acceptance:
 
 ### [P0] M3.2 Build inline practice chapter UI
 
-Status: Partially implemented in Batch 2; persistence still depends on M3.1
+Status: Partially implemented in Batch 2; persistence linkage added in Batch 3
 
 Dependencies: M3.1
 
@@ -351,6 +353,8 @@ Acceptance:
 
 ### [P0] M4.1 Add `记一下` for reality-event capture
 
+Status: Implemented in Batch 4
+
 Dependencies: M2.3, M1.4
 
 Scope:
@@ -368,11 +372,15 @@ Acceptance:
 
 ### [P0] M4.2 Introduce `reality_events`, `reality_signals`, and `reality_inferences`
 
+Status: Partially implemented in Batch 4 (`reality_events` foundation only)
+
 Dependencies: M4.1, M1.1
 
 Scope:
 
 - Add the new reality-layer entities from the PRD.
+- Current implementation adds durable `reality_events` capture and profile/chat exposure.
+- `reality_signals` and `reality_inferences` remain pending so observed facts do not become overconfident interpretations too early.
 - Preserve a strict distinction between:
   - observed fact
   - extracted signal
@@ -406,6 +414,8 @@ Acceptance:
 
 ### [P1] M4.4 Reframe the old intel card as `TA 档案`
 
+Status: Partially implemented in Batch 4
+
 Dependencies: M4.2
 
 Scope:
@@ -413,6 +423,7 @@ Scope:
 - Rename and redesign the profile surface around:
   - TA identity / stable profile
   - reality observation layer
+- Current implementation surfaces recent confirmed reality events inside `TA 档案`.
 - Keep user-editable facts, source, confidence, and confirmation state.
 - Surface recent reality events, signals, and inferences without making the page feel like a dashboard.
 

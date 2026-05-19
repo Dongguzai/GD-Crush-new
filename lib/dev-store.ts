@@ -133,6 +133,40 @@ type DevPracticeRun = {
   createdAt: string;
 };
 
+export type DevPracticeChapter = {
+  id: string;
+  crushId: string;
+  companionSessionId?: string | null;
+  practiceSessionId?: string | null;
+  practiceRunId?: string | null;
+  title: string;
+  scenarioType: string;
+  triggerSource: string;
+  status: "active" | "completed" | "cancelled";
+  startMessageId?: string | null;
+  endMessageId?: string | null;
+  realityContextJson: Record<string, unknown>;
+  recapJson: Record<string, unknown>;
+  suggestedLine?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt?: string | null;
+};
+
+export type DevRealityEvent = {
+  id: string;
+  crushId: string;
+  sourceType: string;
+  sourceMessageId?: string | null;
+  eventType: string;
+  eventText: string;
+  occurredAtText?: string | null;
+  extractionJson: Record<string, unknown>;
+  status: "confirmed" | "dismissed";
+  createdAt: string;
+  updatedAt: string;
+};
+
 type DevRealAction = {
   id: string;
   crushId: string;
@@ -193,6 +227,8 @@ type DevStoreData = {
   chatSessions: DevChatSession[];
   messages: DevMessage[];
   practiceRuns: DevPracticeRun[];
+  practiceChapters: DevPracticeChapter[];
+  realityEvents: DevRealityEvent[];
   realActions: DevRealAction[];
   profileUpdateSuggestions: DevProfileUpdateSuggestion[];
   memories: DevMemory[];
@@ -215,6 +251,8 @@ const emptyStore = (): DevStoreData => ({
   chatSessions: [],
   messages: [],
   practiceRuns: [],
+  practiceChapters: [],
+  realityEvents: [],
   realActions: [],
   profileUpdateSuggestions: [],
   memories: [],
@@ -872,6 +910,53 @@ export async function getDevPracticeRunById(practiceRunId: string) {
   return data.practiceRuns.find((run) => run.id === practiceRunId) ?? null;
 }
 
+export async function getDevPracticeChaptersForCrush(crushId: string) {
+  const data = await readStore();
+  return data.practiceChapters.filter((chapter) => chapter.crushId === crushId);
+}
+
+export async function getDevRealityEvents(crushId: string) {
+  const data = await readStore();
+  return data.realityEvents.filter((event) => event.crushId === crushId);
+}
+
+export async function createDevRealityEvent(input: {
+  crushId: string;
+  sourceMessageId?: string | null;
+  eventText: string;
+  eventType?: string;
+  occurredAtText?: string | null;
+  extractionJson?: Record<string, unknown>;
+}) {
+  const data = await readStore();
+  const existing = input.sourceMessageId
+    ? data.realityEvents.find((event) => event.sourceMessageId === input.sourceMessageId && event.status === "confirmed")
+    : null;
+
+  if (existing) {
+    return existing;
+  }
+
+  const createdAt = now();
+  const event: DevRealityEvent = {
+    id: crypto.randomUUID(),
+    crushId: input.crushId,
+    sourceType: "chat_message",
+    sourceMessageId: input.sourceMessageId ?? null,
+    eventType: input.eventType ?? "chat_observation",
+    eventText: input.eventText,
+    occurredAtText: input.occurredAtText ?? null,
+    extractionJson: input.extractionJson ?? {},
+    status: "confirmed",
+    createdAt,
+    updatedAt: createdAt,
+  };
+
+  data.realityEvents.push(event);
+  await writeStore(data);
+  return event;
+}
+
 export async function startDevSimulation(input: { crushId: string; scenarioType: string; goal: string; background: string }) {
   const data = await readStore();
   const createdAt = now();
@@ -885,7 +970,27 @@ export async function startDevSimulation(input: { crushId: string; scenarioType:
     createdAt,
     updatedAt: createdAt,
   };
+  const chapter: DevPracticeChapter = {
+    id: crypto.randomUUID(),
+    crushId: input.crushId,
+    companionSessionId: null,
+    practiceSessionId: session.id,
+    practiceRunId: null,
+    title: input.goal,
+    scenarioType: input.scenarioType,
+    triggerSource: "user_click",
+    status: "active",
+    startMessageId: null,
+    endMessageId: null,
+    realityContextJson: { background: input.background },
+    recapJson: {},
+    suggestedLine: null,
+    createdAt,
+    updatedAt: createdAt,
+    finishedAt: null,
+  };
   data.chatSessions.push(session);
+  data.practiceChapters.push(chapter);
   data.messages.push({
     id: crypto.randomUUID(),
     sessionId: session.id,
@@ -894,7 +999,7 @@ export async function startDevSimulation(input: { crushId: string; scenarioType:
     createdAt,
   });
   await writeStore(data);
-  return session;
+  return { ...session, chapter };
 }
 
 export async function addDevSimulationTurn(sessionId: string, message: string) {
@@ -966,6 +1071,15 @@ export async function finishDevSimulation(sessionId: string) {
     createdAt: session.updatedAt,
   };
   data.practiceRuns.push(run);
+  const chapter = data.practiceChapters.find((item) => item.practiceSessionId === sessionId);
+  if (chapter) {
+    chapter.practiceRunId = run.id;
+    chapter.status = "completed";
+    chapter.recapJson = run.coachAnalysisJson;
+    chapter.suggestedLine = run.suggestedLine ?? null;
+    chapter.updatedAt = session.updatedAt;
+    chapter.finishedAt = session.updatedAt;
+  }
   await writeStore(data);
   return run;
 }
@@ -1106,6 +1220,8 @@ export async function destroyDevCrush(userId: string, crushId: string) {
   data.chatSessions = data.chatSessions.filter((item) => item.crushId !== crushId);
   data.messages = data.messages.filter((item) => !sessions.includes(item.sessionId));
   data.practiceRuns = data.practiceRuns.filter((item) => item.crushId !== crushId);
+  data.practiceChapters = data.practiceChapters.filter((item) => item.crushId !== crushId);
+  data.realityEvents = data.realityEvents.filter((item) => item.crushId !== crushId);
   data.realActions = data.realActions.filter((item) => item.crushId !== crushId);
   data.profileUpdateSuggestions = data.profileUpdateSuggestions.filter((item) => item.crushId !== crushId);
   data.memories = data.memories.filter((item) => item.crushId !== crushId);

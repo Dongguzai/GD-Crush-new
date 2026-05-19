@@ -15,6 +15,7 @@ import {
   createDevMemory,
   createDevProfileDraft,
   createDevQuickPractice,
+  createDevRealityEvent,
   destroyDevCrush,
   finishDevSimulation,
   getActiveDevCrush,
@@ -28,7 +29,9 @@ import {
   getDevMessages,
   getDevMessagesForCrush,
   getDevPracticeRunById,
+  getDevPracticeChaptersForCrush,
   getDevProfileDraft,
+  getDevRealityEvents,
   getDevSessionById,
   getDevSuggestions,
   getDevSuggestionById,
@@ -54,9 +57,11 @@ import {
   memories,
   messages,
   onboardingMaterials,
+  practiceChapters,
   practiceRuns,
   profileUpdateSuggestions,
   realActions,
+  realityEvents,
   users,
   userSettings,
   visualAssets,
@@ -73,7 +78,7 @@ import {
 import type { QuickLineAnalysisResult } from "@/lib/ai-output-schemas";
 import { getStorageService } from "@/lib/storage-service";
 import { getTtsService } from "@/lib/tts-service";
-import { ServiceUnavailableError } from "@/lib/errors";
+import { BadRequestError, ServiceUnavailableError } from "@/lib/errors";
 import type { VisualTheme } from "@/lib/visual-prompts";
 
 type ProfileFact = {
@@ -97,6 +102,48 @@ type AiProfileAnalysis = {
 
 type QuickPracticeAnalysis = QuickLineAnalysisResult;
 
+type PracticeChapterSummary = {
+  summary?: string;
+  riskPoints?: string[];
+  recommendedNextAction?: string;
+};
+
+type PracticeChapterMessage = {
+  id: string;
+  role: "user" | "crush";
+  content: string;
+  coachTip?: Record<string, unknown> | null;
+};
+
+type PersistedPracticeChapter = {
+  id: string;
+  status: "active" | "finished";
+  scenarioType: string;
+  goal: string;
+  background: string;
+  sessionId: string | null;
+  messages: PracticeChapterMessage[];
+  coachTips: Record<string, unknown>[];
+  summary: PracticeChapterSummary | null;
+  suggestedAction: {
+    id: string;
+    suggestedLine?: string | null;
+    coachAnalysisJson?: PracticeChapterSummary | null;
+  } | null;
+  actionSaved: boolean;
+  createdAt: string | Date;
+};
+
+type RealityEventOutput = {
+  id: string;
+  sourceMessageId?: string | null;
+  eventText: string;
+  eventType: string;
+  occurredAtText?: string | null;
+  status: string;
+  createdAt: string | Date;
+};
+
 function asNumber(value: string | number | null | undefined) {
   if (value === null || value === undefined) {
     return null;
@@ -104,6 +151,42 @@ function asNumber(value: string | number | null | undefined) {
 
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function asSummary(value: unknown): PracticeChapterSummary | null {
+  const record = asRecord(value);
+  if (!Object.keys(record).length) {
+    return null;
+  }
+
+  return {
+    summary: typeof record.summary === "string" ? record.summary : undefined,
+    riskPoints: Array.isArray(record.riskPoints)
+      ? record.riskPoints.filter((item): item is string => typeof item === "string")
+      : undefined,
+    recommendedNextAction:
+      typeof record.recommendedNextAction === "string" ? record.recommendedNextAction : undefined,
+  };
+}
+
+function getBackgroundFromContext(value: unknown) {
+  const record = asRecord(value);
+  return typeof record.background === "string" ? record.background : "";
+}
+
+function getCoachTipFromMessage(message: { metadataJson?: unknown }) {
+  const metadata = asRecord(message.metadataJson);
+  const coachTip = asRecord(metadata.coachTip);
+  return Object.keys(coachTip).length ? coachTip : null;
+}
+
+function inferOccurredAtText(text: string) {
+  const match = text.match(/(刚刚|刚才|今天|昨天|前天|上次|最近|这周|周末|今晚|早上|中午|下午|晚上|那天)/);
+  return match?.[1] ?? null;
 }
 
 function mapDbDraft<T extends typeof aiProfileDrafts.$inferSelect>(draft: T) {
@@ -923,7 +1006,7 @@ export async function getCurrentCrushProfileDetail() {
   const { profile, metrics } = await getCurrentUserActiveCrush();
 
   if (!profile) {
-    return { profile, metrics, traits: [], materials: [], visualAssets: [] };
+    return { profile, metrics, traits: [], materials: [], visualAssets: [], realityEvents: [] };
   }
 
   if (!hasDatabaseUrl()) {
@@ -933,11 +1016,12 @@ export async function getCurrentCrushProfileDetail() {
       traits: await getDevTraits(profile.id),
       materials: await getDevMaterials(profile.id),
       visualAssets: await getDevVisualAssets(profile.id),
+      realityEvents: await getCurrentRealityEvents(profile.id),
     };
   }
 
   const db = getDb();
-  const [traits, materials, assets] = await Promise.all([
+  const [traits, materials, assets, events] = await Promise.all([
     db.select().from(crushTraits).where(eq(crushTraits.crushId, profile.id)).orderBy(asc(crushTraits.createdAt)),
     db
       .select()
@@ -945,6 +1029,7 @@ export async function getCurrentCrushProfileDetail() {
       .where(eq(onboardingMaterials.crushId, profile.id))
       .orderBy(asc(onboardingMaterials.createdAt)),
     db.select().from(visualAssets).where(eq(visualAssets.crushId, profile.id)).orderBy(asc(visualAssets.createdAt)),
+    getCurrentRealityEvents(profile.id),
   ]);
 
   return {
@@ -953,6 +1038,7 @@ export async function getCurrentCrushProfileDetail() {
     traits: traits.map(mapDbTrait),
     materials,
     visualAssets: assets,
+    realityEvents: events,
   };
 }
 
@@ -1058,13 +1144,17 @@ export async function getCurrentCompanionChat() {
   const { profile: active } = await getCurrentUserActiveCrush();
 
   if (!active) {
-    return { profile: null, session: null, messages: [] };
+    return { profile: null, session: null, messages: [], practiceChapters: [], realityEvents: [] };
   }
 
   if (!hasDatabaseUrl()) {
     const session = await getOrCreateDevSession(active.id, "companion", "甜蜜陪伴");
     const sessionMessages = await getDevMessages(session.id);
-    return { profile: active, session, messages: sessionMessages };
+    const [chapters, events] = await Promise.all([
+      getCurrentPracticeChapters(active.id),
+      getCurrentRealityEvents(active.id),
+    ]);
+    return { profile: active, session, messages: sessionMessages, practiceChapters: chapters, realityEvents: events };
   }
 
   const db = getDb();
@@ -1075,7 +1165,238 @@ export async function getCurrentCompanionChat() {
     .where(eq(messages.sessionId, session.id))
     .orderBy(asc(messages.createdAt));
 
-  return { profile: active, session, messages: sessionMessages };
+  const [chapters, events] = await Promise.all([
+    getCurrentPracticeChapters(active.id),
+    getCurrentRealityEvents(active.id),
+  ]);
+  return { profile: active, session, messages: sessionMessages, practiceChapters: chapters, realityEvents: events };
+}
+
+async function getCurrentPracticeChapters(crushId: string): Promise<PersistedPracticeChapter[]> {
+  if (!hasDatabaseUrl()) {
+    const [chapters, actions] = await Promise.all([
+      getDevPracticeChaptersForCrush(crushId),
+      getDevActions(crushId),
+    ]);
+
+    const hydrated = await Promise.all(
+      chapters.map(async (chapter) => {
+        const [sessionMessages, run] = await Promise.all([
+          chapter.practiceSessionId ? getDevMessages(chapter.practiceSessionId) : Promise.resolve([]),
+          chapter.practiceRunId ? getDevPracticeRunById(chapter.practiceRunId) : Promise.resolve(null),
+        ]);
+        const chapterMessages = sessionMessages
+          .filter((message) => message.role === "user" || message.role === "crush")
+          .map((message) => ({
+            id: message.id,
+            role: message.role as "user" | "crush",
+            content: message.content,
+            coachTip: message.role === "crush" ? getCoachTipFromMessage(message) : null,
+          }));
+        const coachTips = chapterMessages
+          .map((message) => message.coachTip)
+          .filter((tip): tip is Record<string, unknown> => Boolean(tip));
+        const summary = asSummary(chapter.recapJson) ?? asSummary(run?.coachAnalysisJson);
+
+        return {
+          id: chapter.id,
+          status: chapter.status === "completed" ? "finished" : "active",
+          scenarioType: chapter.scenarioType,
+          goal: chapter.title,
+          background: getBackgroundFromContext(chapter.realityContextJson),
+          sessionId: chapter.practiceSessionId ?? null,
+          messages: chapterMessages,
+          coachTips,
+          summary,
+          suggestedAction: run
+            ? {
+                id: run.id,
+                suggestedLine: run.suggestedLine ?? null,
+                coachAnalysisJson: asSummary(run.coachAnalysisJson),
+              }
+            : null,
+          actionSaved: run ? actions.some((action) => action.practiceRunId === run.id) : false,
+          createdAt: chapter.createdAt,
+        } satisfies PersistedPracticeChapter;
+      }),
+    );
+
+    return hydrated.sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
+  }
+
+  const db = getDb();
+  const chapters = await db
+    .select()
+    .from(practiceChapters)
+    .where(eq(practiceChapters.crushId, crushId))
+    .orderBy(asc(practiceChapters.createdAt));
+
+  if (!chapters.length) {
+    return [];
+  }
+
+  const sessionIds = chapters
+    .map((chapter) => chapter.practiceSessionId)
+    .filter((sessionId): sessionId is string => Boolean(sessionId));
+  const runIds = chapters
+    .map((chapter) => chapter.practiceRunId)
+    .filter((runId): runId is string => Boolean(runId));
+
+  const [chapterMessages, runs, actions] = await Promise.all([
+    sessionIds.length
+      ? db.select().from(messages).where(inArray(messages.sessionId, sessionIds)).orderBy(asc(messages.createdAt))
+      : Promise.resolve([]),
+    runIds.length
+      ? db.select().from(practiceRuns).where(inArray(practiceRuns.id, runIds))
+      : Promise.resolve([]),
+    runIds.length
+      ? db.select().from(realActions).where(inArray(realActions.practiceRunId, runIds))
+      : Promise.resolve([]),
+  ]);
+
+  return chapters.map((chapter) => {
+    const sessionMessages = chapterMessages
+      .filter((message) => message.sessionId === chapter.practiceSessionId)
+      .filter((message) => message.role === "user" || message.role === "crush")
+      .map((message) => ({
+        id: message.id,
+        role: message.role as "user" | "crush",
+        content: message.content,
+        coachTip: message.role === "crush" ? getCoachTipFromMessage(message) : null,
+      }));
+    const coachTips = sessionMessages
+      .map((message) => message.coachTip)
+      .filter((tip): tip is Record<string, unknown> => Boolean(tip));
+    const run = runs.find((item) => item.id === chapter.practiceRunId) ?? null;
+    const summary = asSummary(chapter.recapJson) ?? asSummary(run?.coachAnalysisJson);
+
+    return {
+      id: chapter.id,
+      status: chapter.status === "completed" ? "finished" : "active",
+      scenarioType: chapter.scenarioType,
+      goal: chapter.title,
+      background: getBackgroundFromContext(chapter.realityContextJson),
+      sessionId: chapter.practiceSessionId ?? null,
+      messages: sessionMessages,
+      coachTips,
+      summary,
+      suggestedAction: run
+        ? {
+            id: run.id,
+            suggestedLine: run.suggestedLine ?? null,
+            coachAnalysisJson: asSummary(run.coachAnalysisJson),
+          }
+        : null,
+      actionSaved: run ? actions.some((action) => action.practiceRunId === run.id) : false,
+      createdAt: chapter.createdAt,
+    };
+  });
+}
+
+async function getCurrentRealityEvents(crushId: string): Promise<RealityEventOutput[]> {
+  if (!hasDatabaseUrl()) {
+    const events = await getDevRealityEvents(crushId);
+    return events
+      .filter((event) => event.status === "confirmed")
+      .map((event) => ({
+        id: event.id,
+        sourceMessageId: event.sourceMessageId ?? null,
+        eventText: event.eventText,
+        eventType: event.eventType,
+        occurredAtText: event.occurredAtText ?? null,
+        status: event.status,
+        createdAt: event.createdAt,
+      }))
+      .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
+  }
+
+  const events = await getDb()
+    .select()
+    .from(realityEvents)
+    .where(and(eq(realityEvents.crushId, crushId), eq(realityEvents.status, "confirmed")))
+    .orderBy(asc(realityEvents.createdAt));
+
+  return events.map((event) => ({
+    id: event.id,
+    sourceMessageId: event.sourceMessageId,
+    eventText: event.eventText,
+    eventType: event.eventType,
+    occurredAtText: event.occurredAtText,
+    status: event.status,
+    createdAt: event.createdAt,
+  }));
+}
+
+export async function createCurrentRealityEvent(input: {
+  sourceMessageId: string;
+  note?: string | null;
+}) {
+  const { profile: active } = await getCurrentUserActiveCrush();
+  if (!active) {
+    throw new Error("No active Crush profile.");
+  }
+
+  const message = await getCurrentOwnedMessageById(input.sourceMessageId);
+  if (!message) {
+    return null;
+  }
+
+  if (message.role !== "user") {
+    throw new BadRequestError("只能记录你自己说出的现实事件。");
+  }
+
+  const session = await getCurrentOwnedSessionById(message.sessionId);
+  if (!session || session.crushId !== active.id) {
+    return null;
+  }
+
+  const eventText = input.note?.trim() || message.content.trim();
+  if (!eventText) {
+    throw new BadRequestError("现实事件内容不能为空。");
+  }
+
+  const occurredAtText = inferOccurredAtText(eventText);
+  const extractionJson = {
+    originalMessage: message.content,
+    captureMethod: "user_confirmed",
+  };
+
+  if (!hasDatabaseUrl()) {
+    return createDevRealityEvent({
+      crushId: active.id,
+      sourceMessageId: message.id,
+      eventText,
+      eventType: "chat_observation",
+      occurredAtText,
+      extractionJson,
+    });
+  }
+
+  const db = getDb();
+  const [existing] = await db
+    .select()
+    .from(realityEvents)
+    .where(and(eq(realityEvents.sourceMessageId, message.id), eq(realityEvents.status, "confirmed")))
+    .limit(1);
+
+  if (existing) {
+    return existing;
+  }
+
+  const [event] = await db
+    .insert(realityEvents)
+    .values({
+      crushId: active.id,
+      sourceType: "chat_message",
+      sourceMessageId: message.id,
+      eventType: "chat_observation",
+      eventText,
+      occurredAtText,
+      extractionJson,
+    })
+    .returning();
+
+  return event;
 }
 
 export async function sendCurrentCompanionMessage(
@@ -1340,6 +1661,7 @@ export async function startCurrentSimulation(input: {
   }
 
   const db = getDb();
+  const companionSession = await getOrCreateDbSession(active.id, "companion", "甜蜜陪伴");
   const [session] = await db
     .insert(chatSessions)
     .values({
@@ -1349,13 +1671,27 @@ export async function startCurrentSimulation(input: {
       scenarioType: input.scenarioType,
     })
     .returning();
-  await db.insert(messages).values({
+  const [startMessage] = await db.insert(messages).values({
     sessionId: session.id,
     role: "system",
     content: `背景：${input.background}`,
-  });
+  }).returning();
+  const [chapter] = await db
+    .insert(practiceChapters)
+    .values({
+      crushId: active.id,
+      companionSessionId: companionSession.id,
+      practiceSessionId: session.id,
+      title: input.goal,
+      scenarioType: input.scenarioType,
+      triggerSource: "user_click",
+      status: "active",
+      startMessageId: startMessage?.id ?? null,
+      realityContextJson: { background: input.background },
+    })
+    .returning();
 
-  return session;
+  return { ...session, chapter };
 }
 
 export async function sendCurrentSimulationMessage(sessionId: string, message: string) {
@@ -1432,6 +1768,26 @@ export async function finishCurrentSimulation(sessionId: string) {
       createdAt: now,
     })
     .returning();
+
+  const sessionMessages = await db
+    .select()
+    .from(messages)
+    .where(eq(messages.sessionId, session.id))
+    .orderBy(asc(messages.createdAt));
+  const lastMessage = sessionMessages.at(-1);
+
+  await db
+    .update(practiceChapters)
+    .set({
+      practiceRunId: run.id,
+      status: "completed",
+      endMessageId: lastMessage?.id ?? null,
+      recapJson: run.coachAnalysisJson,
+      suggestedLine: run.suggestedLine ?? null,
+      updatedAt: now,
+      finishedAt: now,
+    })
+    .where(eq(practiceChapters.practiceSessionId, session.id));
 
   return run;
 }

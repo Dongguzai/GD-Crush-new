@@ -185,6 +185,44 @@ export const practiceRuns = pgTable("practice_runs", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const practiceChapters = pgTable("practice_chapters", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  crushId: uuid("crush_id")
+    .notNull()
+    .references(() => crushProfiles.id, { onDelete: "cascade" }),
+  companionSessionId: uuid("companion_session_id").references(() => chatSessions.id, { onDelete: "set null" }),
+  practiceSessionId: uuid("practice_session_id").references(() => chatSessions.id, { onDelete: "set null" }),
+  practiceRunId: uuid("practice_run_id").references(() => practiceRuns.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  scenarioType: text("scenario_type").notNull().default("conversation"),
+  triggerSource: text("trigger_source").notNull().default("user_click"),
+  status: text("status").notNull().default("active"),
+  startMessageId: uuid("start_message_id").references(() => messages.id, { onDelete: "set null" }),
+  endMessageId: uuid("end_message_id").references(() => messages.id, { onDelete: "set null" }),
+  realityContextJson: jsonb("reality_context_json").notNull().default({}),
+  recapJson: jsonb("recap_json").notNull().default({}),
+  suggestedLine: text("suggested_line"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+});
+
+export const realityEvents = pgTable("reality_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  crushId: uuid("crush_id")
+    .notNull()
+    .references(() => crushProfiles.id, { onDelete: "cascade" }),
+  sourceType: text("source_type").notNull().default("chat_message"),
+  sourceMessageId: uuid("source_message_id").references(() => messages.id, { onDelete: "set null" }),
+  eventType: text("event_type").notNull().default("chat_observation"),
+  eventText: text("event_text").notNull(),
+  occurredAtText: text("occurred_at_text"),
+  extractionJson: jsonb("extraction_json").notNull().default({}),
+  status: text("status").notNull().default("confirmed"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const realActions = pgTable("real_actions", {
   id: uuid("id").primaryKey().defaultRandom(),
   crushId: uuid("crush_id")

@@ -17,7 +17,7 @@ export async function POST(request: Request) {
       return badRequestResponse("模拟参数不正确。");
     }
     const session = await startCurrentSimulation(parsed.data);
-    return NextResponse.json({ sessionId: session.id });
+    return NextResponse.json({ sessionId: session.id, chapter: session.chapter ?? null });
   } catch (error) {
     return handleApiError(error);
   }

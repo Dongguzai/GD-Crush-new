@@ -512,6 +512,132 @@ test("failure path: a foreign practice run cannot seed another user's action", a
   assert.equal(result.response.status, 404);
 });
 
+test("practice chapters persist inside companion chat and can seed actions", async () => {
+  const { userId } = await createReadyUser();
+
+  let result = await jsonRequest("/api/practice/full-simulation/start", {
+    method: "POST",
+    userId,
+    body: {
+      scenarioType: "conversation",
+      goal: "想约 TA 周末看展",
+      background: "上次聊到展览，对方有接话但没有主动约时间。",
+    },
+  });
+  assert.equal(result.response.status, 200);
+  assert.ok(result.body.sessionId);
+  assert.ok(result.body.chapter.id);
+
+  const sessionId = result.body.sessionId;
+  result = await jsonRequest("/api/practice/full-simulation/message", {
+    method: "POST",
+    userId,
+    body: {
+      sessionId,
+      message: "我周末可能会去那个展，你要不要一起？",
+    },
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.crushReply, "我听到了，不过我可能需要一点时间想想。");
+
+  result = await jsonRequest("/api/practice/full-simulation/finish", {
+    method: "POST",
+    userId,
+    body: { sessionId },
+  });
+  assert.equal(result.response.status, 200);
+  assert.ok(result.body.suggestedAction.id);
+
+  const practiceRunId = result.body.suggestedAction.id;
+  result = await jsonRequest("/api/chat/companion", {
+    method: "GET",
+    userId,
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.practiceChapters.length, 1);
+  assert.equal(result.body.practiceChapters[0].status, "finished");
+  assert.equal(result.body.practiceChapters[0].goal, "想约 TA 周末看展");
+  assert.equal(result.body.practiceChapters[0].messages.length, 2);
+  assert.equal(result.body.practiceChapters[0].suggestedAction.id, practiceRunId);
+  assert.equal(result.body.practiceChapters[0].actionSaved, false);
+
+  result = await jsonRequest("/api/actions", {
+    method: "POST",
+    userId,
+    body: {
+      practiceRunId,
+      title: "看展邀约",
+      suggestedMessage: result.body.practiceChapters[0].suggestedAction.suggestedLine,
+    },
+  });
+  assert.equal(result.response.status, 200);
+
+  result = await jsonRequest("/api/chat/companion", {
+    method: "GET",
+    userId,
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.practiceChapters[0].actionSaved, true);
+});
+
+test("reality events can be captured from companion chat and shown in profile context", async () => {
+  const { userId } = await createReadyUser();
+
+  let result = await jsonRequest("/api/chat/companion", {
+    method: "POST",
+    userId,
+    body: {
+      message: "昨天她回复我了，还问我周末有没有空。",
+      inputMode: "text",
+    },
+  });
+  assert.equal(result.response.status, 200);
+  const userMessageId = result.body.userMessage.id;
+  const crushMessageId = result.body.crushMessage.id;
+
+  result = await jsonRequest("/api/reality-events", {
+    method: "POST",
+    userId,
+    body: { sourceMessageId: userMessageId },
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.realityEvent.sourceMessageId, userMessageId);
+  assert.equal(result.body.realityEvent.eventText, "昨天她回复我了，还问我周末有没有空。");
+  assert.equal(result.body.realityEvent.occurredAtText, "昨天");
+  const realityEventId = result.body.realityEventId;
+
+  result = await jsonRequest("/api/reality-events", {
+    method: "POST",
+    userId,
+    body: { sourceMessageId: userMessageId },
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.realityEventId, realityEventId);
+
+  result = await jsonRequest("/api/reality-events", {
+    method: "POST",
+    userId,
+    body: { sourceMessageId: crushMessageId },
+  });
+  assert.equal(result.response.status, 400);
+
+  result = await jsonRequest("/api/chat/companion", {
+    method: "GET",
+    userId,
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.realityEvents.length, 1);
+  assert.equal(result.body.realityEvents[0].sourceMessageId, userMessageId);
+
+  result = await jsonRequest("/api/profile", {
+    method: "GET",
+    userId,
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.realityEvents.length, 1);
+  assert.equal(result.body.realityEvents[0].id, realityEventId);
+});
+
 test("failure path: invalid destroy confirmation is rejected before mutation", async () => {
   const { userId } = await createReadyUser();
   let result = await jsonRequest("/api/crush/destroy", {
