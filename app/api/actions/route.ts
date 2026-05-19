@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { badRequestResponse, handleApiError, notFoundResponse } from "@/lib/errors";
 import { createCurrentAction, getCurrentHydratedActions, getCurrentSuggestions } from "@/lib/repositories";
+import { trackAction } from "@/lib/analytics";
 
 const requestSchema = z.object({
   practiceRunId: z.string().uuid().optional().nullable(),
@@ -32,6 +33,10 @@ export async function POST(request: Request) {
     if (!action) {
       return notFoundResponse("关联演练不存在。");
     }
+
+    // M6.4: Track action created
+    trackAction("created");
+
     return NextResponse.json({ actionId: action.id, action });
   } catch (error) {
     return handleApiError(error);

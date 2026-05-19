@@ -86,6 +86,7 @@ import { getStorageService } from "@/lib/storage-service";
 import { getTtsService } from "@/lib/tts-service";
 import { BadRequestError, ServiceUnavailableError } from "@/lib/errors";
 import type { VisualTheme } from "@/lib/visual-prompts";
+import { trackPracticeChapter, trackAiMetrics } from "@/lib/analytics";
 
 type ProfileFact = {
   label: string;
@@ -2026,6 +2027,9 @@ export async function startCurrentSimulation(input: {
     })
     .returning();
 
+  // M6.4: Track practice chapter started
+  trackPracticeChapter("started", input.scenarioType);
+
   return { ...session, chapter };
 }
 
@@ -2163,6 +2167,9 @@ export async function finishCurrentSimulation(sessionId: string) {
       importanceLevel: 2,
       imageUrl: sceneImageUrl,
     });
+
+    // M6.4: Track practice chapter completed
+    trackPracticeChapter("completed", completedChapter.scenarioType ?? undefined);
   }
 
   return run;

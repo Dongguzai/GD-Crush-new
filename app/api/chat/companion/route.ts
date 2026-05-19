@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getCurrentCompanionChat, sendCurrentCompanionMessage, getCurrentUserActiveCrush, getCurrentPracticeChapters } from "@/lib/repositories";
 import type { PersistedPracticeChapter } from "@/lib/repositories";
 import { badRequestResponse, handleApiError } from "@/lib/errors";
+import { trackChatMessage, trackAiMetrics } from "@/lib/analytics";
 
 const requestSchema = z.object({
   message: z.string().trim().min(1).max(2000),
@@ -20,6 +21,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const startTime = Date.now();
+
   try {
     const body = await request.json().catch(() => null);
     const parsed = requestSchema.safeParse(body);
@@ -52,6 +55,9 @@ export async function POST(request: Request) {
         }));
     }
 
+    // Track: user sent message
+    trackChatMessage(true);
+
     const result = await sendCurrentCompanionMessage(
       parsed.data.message,
       activeCrush ? {
@@ -63,8 +69,21 @@ export async function POST(request: Request) {
       } : undefined
     );
 
+    // Track: AI response received (success)
+    trackAiMetrics("companion_chat", {
+      latencyMs: Date.now() - startTime,
+      success: true,
+    });
+
     return NextResponse.json(result);
   } catch (error) {
+    // Track: AI response failed
+    trackAiMetrics("companion_chat", {
+      latencyMs: Date.now() - startTime,
+      success: false,
+      errorType: error instanceof Error ? error.name : "unknown",
+    });
+
     return handleApiError(error);
   }
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { badRequestResponse, handleApiError, notFoundResponse } from "@/lib/errors";
 import { createCurrentMemory, getCurrentMemories } from "@/lib/repositories";
+import { trackMemory } from "@/lib/analytics";
 
 const requestSchema = z.object({
   sourceType: z.string().min(1),
@@ -36,6 +37,10 @@ export async function POST(request: Request) {
     if (!memory) {
       return notFoundResponse("回忆来源不存在。");
     }
+
+    // M6.4: Track memory created
+    trackMemory("created", parsed.data.sourceType);
+
     return NextResponse.json({ memory });
   } catch (error) {
     return handleApiError(error);

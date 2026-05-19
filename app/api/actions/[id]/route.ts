@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { badRequestResponse, handleApiError, notFoundResponse } from "@/lib/errors";
 import { updateCurrentAction } from "@/lib/repositories";
+import { trackAction } from "@/lib/analytics";
 
 const requestSchema = z.object({
   status: z.string().min(1),
@@ -20,6 +21,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (!result) {
       return notFoundResponse("行动不存在。");
     }
+
+    // M6.4: Track action updated with status
+    trackAction("updated", parsed.data.status);
+
     return NextResponse.json({
       ok: true,
       action: result.action,

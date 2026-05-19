@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { badRequestResponse, handleApiError, notFoundResponse } from "@/lib/errors";
 import { createCurrentRealityEvent } from "@/lib/repositories";
+import { trackRealityCapture } from "@/lib/analytics";
 
 const requestSchema = z.object({
   sourceMessageId: z.string().uuid(),
@@ -18,11 +19,16 @@ export async function POST(request: Request) {
 
     const event = await createCurrentRealityEvent(parsed.data);
     if (!event) {
+      trackRealityCapture("failed");
       return notFoundResponse("关联消息不存在。");
     }
 
+    // M6.4: Track reality event created
+    trackRealityCapture("created");
+
     return NextResponse.json({ realityEventId: event.id, realityEvent: event });
   } catch (error) {
+    trackRealityCapture("failed");
     return handleApiError(error);
   }
 }
