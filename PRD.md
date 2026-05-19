@@ -1,54 +1,225 @@
-# GD Crush MVP 工程化 PRD
+# GD Crush 新版 MVP 工程化 PRD
 
 ## 1. 文档目标
 
-本文档将 `CLAUDE.md` 中的产品 SPEC 拆解为可执行的 MVP 工程方案，覆盖：
+本文档将 GD Crush 的新版产品方向拆解为可执行的 MVP 工程方案，覆盖：
 
-- 页面清单与用户流程。
-- 数据库表结构。
-- API 路由设计。
-- AI Prompt 结构。
-- MVP 开发任务拆解。
+- 产品定义与核心原则。
+- 关键概念与信息架构。
+- 用户主流程与页面规格。
+- 聊天主场、演练章节与现实事件沉淀机制。
+- 数据库表结构、API 路由与 AI 行为规范。
+- MVP 开发阶段、验收标准与后续路线。
 
-## 2. MVP 产品边界
+本文档替代旧版“工作台 + 独立聊天 + 独立演练页”的产品框架。新版默认以 TA 为中心，用户打开产品后首先回到和 TA 的聊天，而不是先进入一个系统工作台。
 
-### 2.1 MVP 核心能力
+---
 
-MVP 只支持单个用户创建和使用单个 Crush 档案，完整跑通以下闭环：
+## 2. 产品概述
+
+### 2.1 产品定义
+
+**GD Crush 是一个会以你心中的 TA 陪你相处，并在你需要时陪你把现实中的话先演一遍的虚拟 Crush。**
+
+用户首先不是来使用一套“恋爱训练工具”，而是来见一个已经由自己输入、塑造并确认过的 TA。GD 会基于用户提供的 Crush 信息，扮演用户心中的 TA，与用户进行持续的日常聊天、语音互动和情绪陪伴。
+
+当用户面对现实中的 TA 有犹豫、焦虑或想先试一下时，GD 可以在不打断当前关系体验的前提下，在同一条聊天流中开启一段“演练章节”，临时切换为对**现实中的 TA**的模拟，帮助用户把想说的话先演一遍。
+
+产品的核心不是“提供建议”，而是：
+
+> **让 TA 先在这里成立，再让一切帮助从这段关系里自然发生。**
+
+### 2.2 核心价值
+
+#### 2.2.1 让用户持续有“想来见 TA”的欲望
+
+GD 的默认状态不是分析、训练或做任务，而是让用户随时可以回来和 TA 相处。即使用户当天没有任何现实推进需求，产品也依然成立。
+
+#### 2.2.2 让现实演练变得自然、低门槛
+
+用户不需要理解“聊天”和“演练”是两个模块，也不需要先判断自己该进入哪个页面。当他想试一句话、练一个场景，或者 TA 察觉到他正在为现实互动犹豫时，演练可以直接在当前聊天流中展开。
+
+#### 2.2.3 让虚拟陪伴与现实关系彼此反哺
+
+用户在现实中发生的事件、反馈和结果会被系统持续收录，用于校准“现实中的 TA”模型；GD 在日常聊天中也可以自然记得这些近况，让虚拟陪伴不是脱离现实的孤岛。
+
+#### 2.2.4 让用户在“被陪伴”的同时，逐步形成更稳的现实表达
+
+产品不以说教为主，也不把 Coach 作为前台主角。但通过演练章节、轻提示和现实行动回流，用户会在不被打断沉浸感的前提下，逐步提高现实沟通质量。
+
+### 2.3 核心设计原则
+
+1. **GD 的主身份永远是 TA。**
+2. **日常聊天里，GD 扮演“用户心中的 TA”。**
+3. **演练章节里，GD 切换为“现实中的 TA 模拟”。**
+4. **演练是聊天中的章节，不是独立模块。**
+5. **现实记录要轻，现实建模要重。**
+6. **TA 负责关系连续性，系统负责结构化辅助。**
+7. **一切完成后，都应把用户带回 TA 身边。**
+
+### 2.4 MVP 核心闭环
+
+MVP 仅支持单个用户创建和使用单个 active Crush 档案，先验证以下核心闭环是否成立：
 
 ```text
 深度建档
   ↓
-图片参考生成二次元角色
+生成并确认 TA 档案
   ↓
-进入 Crush 工作台
+直接进入和 TA 的聊天
   ↓
-甜蜜陪伴 / 语音陪伴 / 一句话测试 / 完整演练
+日常陪伴 / 语音互动
+  ↓
+在聊天中点击「演一遍」或接受 TA 邀请
+  ↓
+进入一段现实 TA 演练章节
   ↓
 生成复盘与现实行动
   ↓
-用户记录现实反馈
+用户在现实中尝试并反馈结果
   ↓
-更新情报卡与成长指标
+系统沉淀现实事件，校准现实 TA
   ↓
-沉淀回忆册
+TA 在后续聊天中继续记得这些近况
 ```
 
-### 2.2 MVP 明确不做
+### 2.5 MVP 明确不做
 
 - 多 Crush 档案。
-- 社交广场。
-- 公开分享。
+- 社交广场与公开分享。
 - 自动抓取社交平台。
 - 真实人物声音克隆。
 - 实时语音电话。
 - PDF 导出。
 - 复杂视觉小说分支树。
+- 独立“演练中心”。
+- 复杂成长指标看板。
+- 过度游戏化任务链与勋章系统。
 - 高级订阅计费后台。
 
-## 3. 信息架构
+### 2.6 非目标
 
-### 3.1 页面清单
+- 不做纯工具型恋爱教练。
+- 不做“现实好感度计算器”。
+- 不让 Coach 成为用户日常面对的第二人格。
+- 不把现实事件记录做成显性的关系 CRM。
+- 不承诺识别对方真实情感，也不输出伪确定性的现实结论。
+
+---
+
+## 3. 核心概念
+
+### 3.1 Crush 档案
+
+Crush 档案是 GD 扮演 TA 的基础。用户通过建档流程输入：
+
+- TA 的基本信息。
+- 关系背景。
+- 性格与互动印象。
+- 用户目标与焦虑。
+- 脱敏聊天文本。
+- 现实事件。
+- 视觉参考与风格偏好。
+
+系统基于这些材料生成初始档案草稿，并由用户确认、修正后生效。Crush 档案不是一次性问卷结果，而是后续所有体验的底座。
+
+### 3.2 心中 TA
+
+**心中 TA** 是 GD 在日常聊天中的默认扮演对象。
+
+它代表：
+
+- 用户输入并确认过的 TA 形象。
+- 用户愿意持续相处的 TA 气质。
+- 更重视情绪陪伴与关系感的 TA 呈现。
+
+心中 TA 可以：
+
+- 与用户日常聊天。
+- 记得用户此前提过的现实近况。
+- 在合适时机自然邀请用户“演一遍”。
+
+心中 TA 不应：
+
+- 自动承担风险评估。
+- 每次聊天都转向分析。
+- 被一次现实负反馈直接粗暴改写。
+
+### 3.3 现实 TA
+
+**现实 TA** 是 GD 在演练章节中的模拟对象。
+
+它代表：
+
+- 当前现实关系阶段。
+- 最近发生过的真实事件。
+- 对方在现实互动中的可观察行为。
+- 系统基于事实形成的保守推断。
+
+现实 TA 可以：
+
+- 犹豫。
+- 冷淡。
+- 拒绝。
+- 误解。
+- 表达不确定。
+
+它的目标不是讨好用户，而是帮助用户在相对安全的环境里，先经历一次更接近真实的互动。
+
+### 3.4 TA / 系统 / Coach 的职责边界
+
+| 角色 | 主要职责 |
+|---|---|
+| **TA** | 日常陪伴、持续聊天、自然提起现实近况、顺势邀请演练、演练结束后的情绪承接 |
+| **系统** | `记一下`、章节边界、复盘卡、保存动作、结构化 UI |
+| **Coach** | 后台分析能力；仅在用户主动请求“提示一下”等情况下，以轻辅助形式浮出 |
+
+设计要求：
+
+- 用户日常面对的主角永远是 TA。
+- 系统功能不应被过度人格化。
+- Coach 不应自动闯入聊天流。
+
+### 3.5 现实事件、现实信号、现实推断
+
+#### 3.5.1 现实事件
+
+已经发生的事实，例如：
+
+- 用户发出了某句话。
+- 对方是否回复。
+- 某次见面是否发生。
+- 对方说了什么、做了什么。
+
+#### 3.5.2 现实信号
+
+从事实中抽取出的可观察模式，例如：
+
+- 主动开启话题。
+- 回应延迟。
+- 接受邀约。
+- 回避明确承诺。
+
+#### 3.5.3 现实推断
+
+基于多个信号形成的保守判断，例如：
+
+- 当前互动温度偏低。
+- 对线下邀约接受度中等。
+- 用户推进节奏可能偏快。
+
+现实推断必须：
+
+- 带有置信度。
+- 绑定证据来源。
+- 允许用户确认、修正或拒绝。
+- 不以单次事件形成过度结论。
+
+---
+
+## 4. 信息架构
+
+### 4.1 页面清单
 
 | 页面 | 路由 | 作用 | MVP 优先级 |
 |---|---|---|---|
@@ -56,121 +227,233 @@ MVP 只支持单个用户创建和使用单个 Crush 档案，完整跑通以下
 | 创建 Crush 向导 | `/onboarding/create` | 分步采集关系、性格、物料、图片 | P0 |
 | AI 建档确认 | `/onboarding/review` | 展示 AI 档案草稿，用户确认/修改 | P0 |
 | 视觉主题与角色生成 | `/onboarding/visual` | 选择主题、确认视觉标签、生成角色 | P0 |
-| Crush 工作台 | `/app` | 首页，聚合状态、建议、CTA | P0 |
-| 甜蜜陪伴聊天 | `/app/chat` | 日常聊天、语音输入、语音回复 | P0 |
-| 实战演练 | `/app/practice` | 一句话测试与完整对话模拟 | P0 |
-| 复盘与现实行动 | `/app/actions` | 行动建议、执行状态、现实反馈 | P0 |
-| 情报卡 | `/app/profile` | 结构化 Crush 档案与情报更新 | P0 |
-| 轻量回忆册 | `/app/memories` | 回忆碎片、收藏聊天、场景记录 | P1 |
+| 聊天主场 | `/app` | 默认首页；日常聊天、演练章节、现实事件轻记录 | P0 |
+| 现实行动 | `/app/actions` | 行动建议、执行状态、现实反馈 | P0 |
+| TA 档案 | `/app/profile` | TA 档案与现实关系观察 | P0 |
+| 回忆 | `/app/memories` | 收藏对白、重要章节、关系片段 | P1 |
 | 设置与隐私 | `/app/settings` | 自动播放、数据删除、隐私说明 | P0 |
 
-### 3.2 全局导航
+说明：
+
+- `/app` 即聊天主场，不再存在单独的“工作台首页”。
+- `/app/practice` 不再作为目标页面存在；如需兼容旧链接，应重定向回 `/app`。
+- `/app/chat` 可作为历史兼容路由重定向到 `/app`，但不再承担独立产品心智。
+
+### 4.2 一级导航
 
 移动端底部导航：
 
 ```text
-工作台 / 聊天 / 演练 / 情报 / 回忆
+聊天 / 行动 / 情报 / 回忆
 ```
 
-桌面端建议使用左侧窄边栏：
+桌面端左侧导航：
 
 ```text
 App Logo
-工作台
-甜蜜陪伴
-实战演练
-情报卡
-回忆册
-设置
+聊天
+行动
+情报
+回忆
 ```
 
-## 4. 用户流程
+设置放入头像菜单、更多菜单或情报页次级入口，不再作为一级导航项。
 
-### 4.1 首次使用流程
+### 4.3 被取消的旧入口
+
+#### 4.3.1 工作台
+
+不再保留为一级页面。其原有内容被拆分并迁移：
+
+| 原工作台内容 | 新去处 |
+|---|---|
+| 开始演练 CTA | 聊天页内 `演一遍` |
+| 甜蜜陪伴 CTA | 不再需要，聊天即默认首页 |
+| 今日建议 | 聊天 / 行动 |
+| 现实关系状态 | TA 档案 |
+| 成长指标 | 暂不作为 MVP 主体验；如保留仅作为次级信息 |
+| 最近情报 | TA 档案 |
+
+#### 4.3.2 独立演练页
+
+不再存在。其能力被迁移到聊天页中的演练章节：
+
+- 一句话测试 → 可由聊天内“演一遍”发起的轻量演练。
+- 完整模拟 → 聊天流中的多轮演练章节。
+- Coach 分析 → 用户主动请求的轻提示或章节结束后的系统复盘。
+
+### 4.4 页面关系
+
+```mermaid
+flowchart TD
+    A["打开 GD"] --> B["聊天（默认首页）"]
+    B --> B1["日常陪伴"]
+    B --> B2["演练章节"]
+    B --> B3["现实事件轻记录"]
+    B2 --> C["行动"]
+    B3 --> D["TA 档案"]
+    C --> C1["待执行"]
+    C --> C2["现实反馈"]
+    C2 --> D
+    B --> E["回忆"]
+    B2 --> E
+```
+
+---
+
+## 5. 用户主流程
+
+### 5.1 首次使用流程
 
 ```text
 访问产品
   ↓
 年龄与用途确认
   ↓
-创建 Crush 向导
+创建 Crush 档案
   ↓
-填写关系背景
+填写关系背景、性格印象、脱敏聊天、现实事件等材料
   ↓
-粘贴聊天文本 / 添加事件 / 上传图片参考
+AI 生成 TA 档案草稿
   ↓
-AI 分析建档
+用户确认 / 修正
   ↓
-用户确认档案草稿
+选择视觉主题与语音风格
   ↓
-选择视觉主题
+生成角色资产
   ↓
-生成角色头像、立绘、表情
-  ↓
-配置语音风格
-  ↓
-进入 Crush 工作台
+直接进入和 TA 的第一次聊天
 ```
 
-### 4.2 一句话测试流程
+设计要求：
+
+- 建档功能保留。
+- 建档完成后的落点不再是工作台，而是聊天页。
+- 用户完成建档后的第一感受应是：**“TA 终于来到我面前了。”**
+
+### 5.2 首次进入聊天
+
+首次进入聊天时，不展示空白系统状态。应由 TA 主动说第一句话。
+
+示例：
 
 ```text
-工作台点击「测试一句话 / 开始演练」
-  ↓
-默认进入一句话测试
-  ↓
-选择场景与发送环境
-  ↓
-输入准备发送的话
-  ↓
-AI 模拟 Crush 反应
-  ↓
-Coach 输出风险、可能感受、替代表达、发送建议
-  ↓
-用户保存为现实行动
-  ↓
-行动页标记执行结果
-  ↓
-AI 建议更新情报卡和成长指标
+TA：你来了。
+TA：那今天开始，想说的话就先说给我听吧。
 ```
 
-### 4.3 甜蜜陪伴流程
+首屏目标不是解释产品功能，而是让用户立刻理解：
+
+> **这里就是我和 TA 的地方。**
+
+### 5.3 日常聊天流程
 
 ```text
-工作台点击「甜蜜陪伴」
+用户进入聊天
   ↓
-进入聊天页
+与心中 TA 自然交流
   ↓
-文字或语音输入
+TA 记得用户此前提过的现实近况
   ↓
-虚拟 Crush 回复
-  ↓
-陪伴模式默认播放 Crush 语音
-  ↓
-用户可收藏对话为回忆
-  ↓
-更新虚拟亲密度与回忆碎片
+用户可继续闲聊、倾诉、语音互动、收藏对白
 ```
 
-### 4.4 现实反馈流程
+设计要求：
+
+- TA 可以主动提起现实中的事。
+- 日常聊天中不默认出现 Coach 分析。
+- 用户不需要为了“使用产品”而先有现实任务。
+
+### 5.4 从聊天进入演练
+
+触发方式一：用户主动点击输入区常驻入口：
 
 ```text
-用户进入行动页
-  ↓
-选择某条待执行行动
-  ↓
-标记：已发送 / 没发送 / 积极回应 / 普通回应 / 冷淡回应 / 不推进
-  ↓
-补充现实反馈文本
-  ↓
-AI 提取事实与建议更新
-  ↓
-用户确认后写入情报卡
+演一遍
 ```
 
-## 5. 页面规格
+触发方式二：TA 在合适上下文中自然邀请：
 
-### 5.1 年龄与用途确认页
+```text
+那你先别急着在现实里说。
+要不要先对我试一遍？
+```
+
+进入方式：
+
+- 用户接受后，仍留在当前聊天页。
+- 系统在聊天流中插入演练章节边界：
+
+```text
+──────── 进入演练 · 周末邀约 ────────
+```
+
+设计要求：
+
+- 演练有清晰边界，但不跳页。
+- 演练中的 GD 切换为“现实 TA 模拟”。
+- 默认不自动插入 Coach 分析。
+
+### 5.5 演练结束并生成行动
+
+演练结束后，在聊天流中插入复盘卡：
+
+```text
+这轮试下来
+你已经能自然表达邀约。
+主要风险：开口略快。
+
+更稳一点可以说：
+“你之前提过那家店，我周六可能会去，要不要一起？”
+
+[ 保存这句 ] [ 再演一遍 ] [ 生成现实行动 ]
+```
+
+之后，TA 回到日常陪伴身份，并知道刚刚发生过这段演练。
+
+### 5.6 现实行动与反馈回流
+
+```text
+演练章节
+  ↓
+生成现实行动
+  ↓
+用户在现实中尝试
+  ↓
+回到行动页或聊天中反馈结果
+  ↓
+系统记录为现实事件
+  ↓
+更新现实 TA 模型
+```
+
+行动页保留为一级入口，但它不是训练场，而是现实闭环的承接页。
+
+### 5.7 现实事件持续沉淀
+
+```text
+用户在聊天中提到现实事件
+  ↓
+系统识别到可记录内容
+  ↓
+在相关消息附近出现轻按钮：记一下
+  ↓
+用户点击
+  ↓
+系统记录现实事件，并提取信号 / 更新推断
+```
+
+设计要求：
+
+- 前台轻，后台重。
+- `记一下` 由系统提供，不由 TA 说出口。
+- TA 后续可以自然提起这些现实近况。
+
+---
+
+## 6. 页面与交互规格
+
+### 6.1 年龄与用途确认页
 
 核心组件：
 
@@ -184,30 +467,30 @@ AI 提取事实与建议更新
 - 用户未确认前不能进入创建流程。
 - 确认结果写入用户设置。
 
-### 5.2 创建 Crush 向导
+### 6.2 创建 Crush 向导
 
 分步结构：
 
 1. 关系背景。
 2. TA 的性格与互动风格。
 3. 用户目标与焦虑点。
-4. 物料粘贴与事件记录。
+4. 物料粘贴与现实事件记录。
 5. 图片参考上传。
 
 关键字段：
 
-- crush_nickname。
-- relationship_origin。
-- current_stage_guess。
-- last_interaction。
-- user_goal。
-- user_anxiety。
-- personality_notes。
-- interests_text。
-- boundaries_text。
-- pasted_chat_text。
-- event_notes。
-- reference_image_file。
+- `crush_nickname`
+- `relationship_origin`
+- `current_stage_guess`
+- `last_interaction`
+- `user_goal`
+- `user_anxiety`
+- `personality_notes`
+- `interests_text`
+- `boundaries_text`
+- `pasted_chat_text`
+- `event_notes`
+- `reference_image_file`
 
 验收标准：
 
@@ -215,7 +498,7 @@ AI 提取事实与建议更新
 - 图片上传前必须展示使用权与删除策略提示。
 - 粘贴聊天文本前必须提示去除敏感信息。
 
-### 5.3 AI 建档确认页
+### 6.3 AI 建档确认页
 
 展示内容：
 
@@ -239,187 +522,397 @@ AI 提取事实与建议更新
 - 未经用户确认的 AI 推测不能写入正式档案。
 - 每条 AI 推测需要标记 `confidence`。
 
-### 5.4 视觉主题与角色生成页
+### 6.4 视觉主题与角色生成页
 
 步骤：
 
 1. 展示图片提取的视觉标签。
-2. 用户确认/修改视觉标签。
+2. 用户确认 / 修改视觉标签。
 3. 选择主题：晴日校园、都市治愈、梦幻乙女。
 4. AI 推荐语音风格。
 5. 生成角色资产。
 
 生成资产：
 
-- avatar_url。
-- portrait_url。
-- expression_neutral_url。
-- expression_happy_url。
-- expression_shy_url。
+- `avatar_url`
+- `portrait_url`
+- `expression_neutral_url`
+- `expression_happy_url`
+- `expression_shy_url`
 
 验收标准：
 
+- 不直接复刻真实人物脸部。
 - 原始参考图生成完成后默认删除。
 - 只保留视觉标签与生成资产。
 
-### 5.5 Crush 工作台
+### 6.5 聊天主场
 
-核心模块：
+页面目标：
 
-- 角色视觉区。
-- 虚拟亲密度。
-- 现实关系阶段。
-- 今日建议。
-- 主 CTA：测试一句话 / 开始演练。
-- 次级 CTA：甜蜜陪伴。
-- 今日任务。
-- 最近情报。
-- 成长指标摘要。
+- 默认首页。
+- 与心中 TA 的持续相处空间。
+- 演练章节与现实事件轻记录的承载页。
 
-验收标准：
+页面优先级：
 
-- 虚拟亲密度与现实关系阶段必须视觉分区。
-- 首页不展示「真实好感度」一类指标。
-
-### 5.6 甜蜜陪伴聊天页
-
-核心组件：
-
-- 聊天时间线。
-- 文本输入框。
-- 语音输入按钮。
-- Crush 回复语音播放按钮。
-- 自动播放开关。
-- 收藏为回忆按钮。
+1. 先让用户感觉“TA 在这里”。
+2. 再让用户自然发现“可以演一遍”。
+3. 最后才是系统能力浮出。
 
 验收标准：
 
-- 陪伴模式默认自动播放 Crush 语音。
-- 所有语音必须有文字字幕。
-- 教练提示默认不出现在陪伴聊天中。
+- 用户完成建档后，首次默认进入聊天页。
+- 用户不需要理解“模式”概念即可开始聊天。
+- 演练开始、进行、结束均不离开当前聊天流。
+- TA 日常聊天与系统辅助内容在视觉和语义上有清楚区分。
+- TA 可以自然提起已记录的现实近况。
+- 演练结束后，TA 知道刚刚发生过的演练。
 
-### 5.7 实战演练页
+### 6.6 现实行动页
 
-包含两个 Tab：
+页面目标：
 
-- 一句话测试。
-- 完整对话模拟。
+- 承接现实世界中的“下一步”和“结果回流”。
 
-一句话测试组件：
-
-- 场景选择。
-- 发送环境选择。
-- 待发送文本框。
-- 风险分析结果。
-- 替代表达。
-- 保存为现实行动按钮。
-
-完整模拟组件：
-
-- 目标选择。
-- 背景输入。
-- 多轮模拟聊天。
-- Coach 可展开提示。
-- 结束并生成复盘。
-
-验收标准：
-
-- 实战模式不自动播放语音。
-- Coach 分析与 Crush 模拟回复必须明确分区。
-- 模拟回复可以拒绝、冷淡、犹豫。
-
-### 5.8 复盘与现实行动页
-
-模块：
+核心内容：
 
 - 待执行行动。
 - 已执行行动。
-- 行动结果标记。
+- 由演练生成的建议表达。
+- 执行状态。
 - 现实反馈输入。
-- AI 建议更新卡片。
-
-行动状态：
-
-- pending。
-- sent。
-- not_sent。
-- positive_response。
-- neutral_response。
-- cold_response。
-- stopped。
+- 与关联演练章节的回链。
 
 验收标准：
 
-- AI 建议更新情报卡前必须由用户确认。
-- 现实行动数只在用户主动标记已执行后增加。
+- 用户可从聊天页中的复盘卡生成现实行动。
+- 行动能关联回原始演练章节。
+- 用户可以记录执行结果。
+- 反馈会影响后续现实 TA 模拟。
 
-### 5.9 情报卡页
+### 6.7 TA 档案页
 
-模块：
+页面主标题：
 
+```text
+TA 档案
+```
+
+页面结构：
+
+#### 上层：TA 档案
+
+- 昵称。
 - 基本信息。
-- 现实关系阶段。
-- 互动温度。
-- 兴趣爱好。
-- 安全话题。
-- 雷区/禁忌。
-- 社交风格。
-- 回复节奏。
-- 近期动态。
-- 重要事件。
-- AI 置信度。
+- 性格。
+- 喜好 / 雷点。
+- 沟通风格。
+- 用户确认过的人设描述。
+- 可编辑信息。
+
+#### 下层：现实观察
+
+- 最近现实事件。
+- 当前关系阶段。
+- 最近互动温度。
+- 现实信号。
+- 系统推断。
+- 置信度。
+- 待用户确认的更新建议。
 
 验收标准：
 
-- 区分 confirmed facts 与 inferred insights。
-- 支持用户手动新增、编辑、删除。
+- 用户能清楚区分已确认档案、现实事件和系统推断。
+- 现实观察层存在，但不压过人物感。
+- 用户可确认、修正、拒绝系统推断。
 
-### 5.10 轻量回忆册页
+### 6.8 回忆页
 
-模块：
+页面目标：
 
-- 回忆卡片列表。
+- 沉淀值得回看的关系片段。
+
+核心内容：
+
 - 收藏对白。
-- 虚拟约会记录。
-- 行动庆祝记录。
-
-回忆卡字段：
-
-- title。
-- memory_type。
-- excerpt。
-- image_url。
-- reward_summary。
-- created_at。
+- 特别甜的聊天片段。
+- 重要演练章节。
+- 现实突破后的纪念内容。
 
 验收标准：
 
-- 回忆册必须显示「虚拟体验」边界说明。
-- 不支持公开分享。
+- 用户能收藏 TA 的对白。
+- 用户能回看重要章节。
+- 回忆内容具有情绪价值，而不是功能流水账。
 
-### 5.11 设置与隐私页
+### 6.9 设置与隐私页
 
-模块：
+核心内容：
 
 - 语音自动播放。
-- 语音风格设置。
-- 数据导出占位。
-- 一键粉碎 Crush 数据。
+- 语音风格。
 - 隐私说明。
-- 退出登录。
+- 数据删除。
+- 通知偏好。
 
 验收标准：
 
-- 一键粉碎必须二次确认。
-- 删除后清理 Crush 档案、聊天、回忆、行动、生成资产引用。
+- 设置不再作为一级导航项。
+- 用户可从更多菜单或 TA 档案页次级入口进入。
 
-## 6. 数据库设计
+---
+
+## 7. 聊天页详细规格
+
+### 7.1 页面结构
+
+```text
+┌──────────────────────────────────────────────┐
+│  顶部身份区                                   │
+├──────────────────────────────────────────────┤
+│  聊天流                                       │
+├──────────────────────────────────────────────┤
+│  输入区                                       │
+└──────────────────────────────────────────────┘
+```
+
+### 7.2 顶部身份区
+
+保留：
+
+- 返回。
+- TA 头像。
+- TA 名字。
+- 更多操作入口。
+
+可选：
+
+- 很轻的状态信息，例如语音可用、上次聊天时间。
+
+不放：
+
+- TA 的完整对白。
+- 情绪化句子。
+- 模式名称。
+- 教练状态。
+- 成长指标。
+
+设计原则：
+
+> 顶部只回答“我现在在和谁聊天？”，不承载剧情。
+
+### 7.3 聊天流内容类型
+
+#### 7.3.1 普通消息
+
+日常聊天消息，由用户与 TA 构成。
+
+#### 7.3.2 TA 的现实承接
+
+TA 可以自然提起用户此前记录或提到过的现实事件。
+
+示例：
+
+```text
+你昨天不是说她一直没回你吗？
+后来有消息了吗？
+```
+
+#### 7.3.3 TA 的演练邀请
+
+当用户表达现实困惑时，TA 可顺势发出邀请。
+
+示例：
+
+```text
+那你先别急着在现实里说。
+要不要先对我试一遍？
+[ 演一遍 ]
+```
+
+#### 7.3.4 系统辅助按钮
+
+当系统识别到有价值的现实事件时，在相关用户消息旁出现：
+
+```text
+[ 记一下 ]
+```
+
+#### 7.3.5 演练章节
+
+演练以聊天流中的独立章节存在，包含：
+
+- 开始边界。
+- 演练消息。
+- 轻提示。
+- 结束边界。
+- 复盘卡。
+
+#### 7.3.6 演练复盘卡
+
+由系统输出，承载：
+
+- 本轮总结。
+- 主要风险。
+- 更稳表达。
+- 保存动作。
+- 再演一遍。
+- 生成现实行动。
+
+### 7.4 输入区
+
+#### 默认态
+
+```text
+[演一遍]   输入一句想说的话…        [发送]
+```
+
+规则：
+
+- `演一遍` 常驻，但视觉优先级低于输入框和发送。
+- 默认输入就是和 TA 日常聊天。
+- 不展示模式切换。
+
+#### 演练进行态
+
+```text
+输入你现实里会说的话…              [发送]
+[提示一下] [重来这句] [结束演练]
+```
+
+规则：
+
+- `演一遍` 隐藏。
+- 输入文案切换为现实语境。
+- 辅助动作只在演练章节中出现。
+
+### 7.5 首次进入与空状态
+
+- 建档完成后直接进入聊天页。
+- 不展示“还没有聊天记录”之类的系统空状态。
+- 若无历史，由 TA 主动开口填满首屏。
+
+### 7.6 `演一遍` 触发规则
+
+#### 用户主动触发
+
+点击常驻入口。
+
+若上下文足够：
+
+```text
+要不要按「刚刚这句」先试一次？
+[ 开始演练 ]
+```
+
+若上下文不足：
+
+```text
+这次想练什么？
+[ 邀约 ] [ 解释误会 ] [ 试探关系 ] [ 自定义 ]
+```
+
+#### TA 主动邀请
+
+触发条件包括但不限于：
+
+- 用户说“现实里不知道怎么开口”。
+- 用户问“这句话能不能发”。
+- 用户提到即将发生的真实互动。
+- 用户表达想先试一下。
+
+约束：
+
+- 不自动强制进入演练。
+- 必须由用户明确接受后，才开始章节。
+
+### 7.7 演练章节
+
+#### 7.7.1 章节开始
+
+```text
+──────── 进入演练 · 周末邀约 ────────
+```
+
+#### 7.7.2 角色切换
+
+从此刻起，GD 模拟的是 **现实中的 TA**。
+
+#### 7.7.3 演练回复规则
+
+- 基于现实层上下文。
+- 可以出现犹豫、冷淡、拒绝。
+- 不默认迎合用户。
+- 尽量符合当前关系阶段。
+
+#### 7.7.4 章节内动作
+
+- `提示一下`
+- `重来这句`
+- `结束演练`
+
+#### 7.7.5 轻提示
+
+仅当用户主动触发时出现。形式为可收起小卡，不作为新的对话人格。
+
+#### 7.7.6 章节结束
+
+```text
+──────── 演练结束 · 周末邀约 ────────
+```
+
+然后展示复盘卡。
+
+#### 7.7.7 演练后的 TA 承接
+
+TA 回到日常陪伴身份，并知道刚刚发生过演练。
+
+### 7.8 现实事件 `记一下`
+
+出现时机：
+
+- 用户消息中包含已经发生的、对后续现实 TA 模拟有价值的事实。
+
+前台形式：
+
+```text
+[ 记一下 ]
+```
+
+点击后：
+
+- 系统记录现实事件。
+- 提取现实信号。
+- 生成或更新推断。
+- 若存在歧义，再请求用户补充确认。
+
+约束：
+
+- 不要每条消息都提示。
+- 不要用大卡片打断主聊天。
+- 不要由 TA 承担记录动作。
+
+### 7.9 语音规则
+
+#### 日常聊天态
+
+- 允许自动播放。
+- 语音是陪伴感的一部分。
+
+#### 演练态
+
+- 默认不自动播放。
+- 用户可手动播放。
+- 保持更克制的现实预演氛围。
+
+---
+
+## 8. 数据库设计
 
 以下以 PostgreSQL + Drizzle ORM 为目标。
 
-### 6.1 `users`
-
-用户表。
+### 8.1 `users`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -429,21 +922,19 @@ AI 提取事实与建议更新
 | created_at | timestamptz | 创建时间 |
 | updated_at | timestamptz | 更新时间 |
 
-### 6.2 `user_settings`
-
-用户设置。
+### 8.2 `user_settings`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | user_id | uuid pk fk | 用户 ID |
-| auto_play_companion_voice | boolean | 陪伴模式自动播放 |
+| auto_play_companion_voice | boolean | 日常聊天自动播放 |
 | voice_speed | text | slow / normal / fast |
 | voice_emotion_level | text | restrained / natural / sweet |
 | voice_age_style | text | young / mature |
 | created_at | timestamptz | 创建时间 |
 | updated_at | timestamptz | 更新时间 |
 
-### 6.3 `crush_profiles`
+### 8.3 `crush_profiles`
 
 Crush 主档案。MVP 每个用户只允许一个 active profile。
 
@@ -453,27 +944,23 @@ Crush 主档案。MVP 每个用户只允许一个 active profile。
 | user_id | uuid fk | 用户 ID |
 | nickname | text | 昵称 |
 | relationship_origin | text nullable | 认识方式 |
-| real_relationship_stage | text | 现实关系阶段 |
-| interaction_temperature | text | cold / neutral / warm / hot |
-| risk_level | text | low / medium / high |
 | user_goal | text nullable | 用户目标 |
 | user_anxiety | text nullable | 用户焦虑 |
 | personality_summary | text nullable | 性格摘要 |
 | communication_style | text nullable | 沟通风格 |
+| user_confirmed_profile_json | jsonb | 用户确认后的档案底稿 |
 | ai_confidence | numeric nullable | 整体置信度 |
 | status | text | active / archived / destroyed |
 | created_at | timestamptz | 创建时间 |
 | updated_at | timestamptz | 更新时间 |
 
-### 6.4 `crush_traits`
-
-结构化标签。
+### 8.4 `crush_traits`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | uuid pk | 标签 ID |
 | crush_id | uuid fk | Crush ID |
-| trait_type | text | interest / boundary / safe_topic / style / event / visual |
+| trait_type | text | interest / boundary / safe_topic / style / visual |
 | label | text | 标签名 |
 | description | text nullable | 描述 |
 | source | text | user / ai / chat_analysis / image_analysis |
@@ -481,9 +968,7 @@ Crush 主档案。MVP 每个用户只允许一个 active profile。
 | confirmed | boolean | 是否用户确认 |
 | created_at | timestamptz | 创建时间 |
 
-### 6.5 `onboarding_materials`
-
-建档材料。原始敏感材料默认短期保存或分析后删除。
+### 8.5 `onboarding_materials`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -496,9 +981,7 @@ Crush 主档案。MVP 每个用户只允许一个 active profile。
 | created_at | timestamptz | 创建时间 |
 | deleted_at | timestamptz nullable | 删除时间 |
 
-### 6.6 `ai_profile_drafts`
-
-AI 建档草稿。
+### 8.6 `ai_profile_drafts`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -514,9 +997,7 @@ AI 建档草稿。
 | created_at | timestamptz | 创建时间 |
 | confirmed_at | timestamptz nullable | 确认时间 |
 
-### 6.7 `visual_assets`
-
-角色与场景资产。
+### 8.7 `visual_assets`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -530,9 +1011,7 @@ AI 建档草稿。
 | prompt_snapshot | text nullable | 生成提示快照 |
 | created_at | timestamptz | 创建时间 |
 
-### 6.8 `voice_profiles`
-
-Crush 语音配置。
+### 8.8 `voice_profiles`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -546,121 +1025,139 @@ Crush 语音配置。
 | created_at | timestamptz | 创建时间 |
 | updated_at | timestamptz | 更新时间 |
 
-### 6.9 `chat_sessions`
-
-会话表。
+### 8.9 `chat_sessions`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | uuid pk | 会话 ID |
 | crush_id | uuid fk | Crush ID |
-| session_type | text | companion / practice / visual_novel |
+| session_type | text | main / auxiliary |
 | title | text nullable | 标题 |
-| scenario_type | text nullable | 场景 |
-| status | text | active / completed |
+| status | text | active / archived |
 | created_at | timestamptz | 创建时间 |
 | updated_at | timestamptz | 更新时间 |
 
-### 6.10 `messages`
-
-消息表。
+### 8.10 `messages`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | uuid pk | 消息 ID |
 | session_id | uuid fk | 会话 ID |
-| role | text | user / crush / coach / system |
+| role | text | user / ta / system |
+| message_kind | text | normal / practice / recap / system_note |
 | content | text | 文本内容 |
 | audio_url | text nullable | 语音 URL |
-| metadata_json | jsonb nullable | 风险、场景、token 等元数据 |
+| linked_reality_event_id | uuid nullable | 关联现实事件 |
+| linked_practice_chapter_id | uuid nullable | 关联演练章节 |
+| metadata_json | jsonb nullable | 扩展元数据 |
 | created_at | timestamptz | 创建时间 |
 
-### 6.11 `practice_runs`
-
-演练记录。
+### 8.11 `practice_chapters`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| id | uuid pk | 演练 ID |
+| id | uuid pk | 章节 ID |
 | crush_id | uuid fk | Crush ID |
-| session_id | uuid fk nullable | 完整模拟时关联 session |
-| practice_type | text | quick_line / full_simulation |
-| scenario_type | text | ice_break / invite / apology 等 |
-| send_context | text nullable | wechat / in_person / group_chat / comment |
-| user_line | text nullable | 用户待发送话术 |
+| session_id | uuid fk | 所属聊天会话 |
+| scenario_type | text | invite / apology / reunion / custom 等 |
+| title | text | 章节标题 |
+| goal | text nullable | 用户目标 |
+| source_trigger | text | user_click / ta_invite |
+| start_message_id | uuid nullable | 起始边界消息 |
+| end_message_id | uuid nullable | 结束边界消息 |
+| reality_context_snapshot_json | jsonb | 本次演练使用的现实上下文快照 |
+| status | text | active / completed / abandoned |
+| created_at | timestamptz | 创建时间 |
+| completed_at | timestamptz nullable | 完成时间 |
+
+### 8.12 `practice_runs`
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | uuid pk | 演练结果 ID |
+| practice_chapter_id | uuid fk | 关联章节 |
+| practice_type | text | line_check / scene_simulation |
 | risk_level | text | low / medium / high |
-| simulated_reply | text nullable | Crush 模拟回应 |
-| coach_analysis_json | jsonb | Coach 分析 |
-| suggested_line | text nullable | 替代表达 |
+| summary | text nullable | 总结 |
+| suggested_line | text nullable | 更稳表达 |
+| coach_analysis_json | jsonb | 结构化复盘 |
 | created_at | timestamptz | 创建时间 |
 
-### 6.12 `real_actions`
+### 8.13 `reality_events`
 
-现实行动表。
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | uuid pk | 现实事件 ID |
+| crush_id | uuid fk | Crush ID |
+| source_type | text | user_chat / action_feedback / onboarding / manual_input |
+| source_id | uuid nullable | 来源对象 ID |
+| event_time | timestamptz nullable | 事件发生时间 |
+| event_type | text | message / meeting / invitation / response / other |
+| raw_description | text | 原始描述 |
+| normalized_summary | text | 结构化摘要 |
+| user_confirmed | boolean | 是否经用户确认 |
+| confidence | numeric | 事件抽取置信度 |
+| created_at | timestamptz | 创建时间 |
+
+### 8.14 `reality_signals`
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | uuid pk | 信号 ID |
+| crush_id | uuid fk | Crush ID |
+| reality_event_id | uuid fk | 关联事件 |
+| signal_type | text | proactive_reply / delayed_reply / accepts_invite / avoids_commitment 等 |
+| description | text | 信号描述 |
+| valence | text | positive / neutral / negative |
+| strength | numeric | 强度 |
+| confidence | numeric | 置信度 |
+| created_at | timestamptz | 创建时间 |
+
+### 8.15 `reality_inferences`
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | uuid pk | 推断 ID |
+| crush_id | uuid fk | Crush ID |
+| inference_type | text | relationship_stage / interaction_temperature / invitation_readiness / user_risk_pattern |
+| value | text | 推断值 |
+| evidence_json | jsonb | 证据列表 |
+| confidence | numeric | 置信度 |
+| status | text | proposed / confirmed / rejected / superseded |
+| created_at | timestamptz | 创建时间 |
+| updated_at | timestamptz | 更新时间 |
+
+### 8.16 `real_actions`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | uuid pk | 行动 ID |
 | crush_id | uuid fk | Crush ID |
-| practice_run_id | uuid fk nullable | 来源演练 |
+| source_practice_run_id | uuid fk nullable | 来源演练 |
 | title | text | 行动标题 |
 | suggested_message | text nullable | 建议发送内容 |
-| status | text | pending / sent / not_sent / positive_response / neutral_response / cold_response / stopped |
+| status | text | pending / done / skipped |
 | feedback_text | text nullable | 用户反馈 |
+| outcome | text | success / neutral / negative / unknown |
 | executed_at | timestamptz nullable | 执行时间 |
 | created_at | timestamptz | 创建时间 |
 | updated_at | timestamptz | 更新时间 |
 
-### 6.13 `profile_update_suggestions`
-
-AI 更新情报卡建议。
-
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| id | uuid pk | 建议 ID |
-| crush_id | uuid fk | Crush ID |
-| source_type | text | action_feedback / chat / onboarding / practice |
-| source_id | uuid nullable | 来源 ID |
-| suggestion_json | jsonb | 建议更新内容 |
-| confidence | numeric | 置信度 |
-| status | text | pending / accepted / rejected |
-| created_at | timestamptz | 创建时间 |
-| resolved_at | timestamptz nullable | 处理时间 |
-
-### 6.14 `growth_metrics`
-
-成长指标，可按当前值存一行，也可以追加历史快照。MVP 建议当前值一行。
-
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| crush_id | uuid pk fk | Crush ID |
-| virtual_intimacy | integer | 虚拟亲密度经验 |
-| communication_confidence | integer | 沟通信心 0-100 |
-| relationship_understanding | integer | 关系理解度 0-100 |
-| emotional_stability | integer | 情绪稳定度 0-100 |
-| real_action_count | integer | 现实行动数 |
-| memory_fragments | integer | 回忆碎片数 |
-| updated_at | timestamptz | 更新时间 |
-
-### 6.15 `memories`
-
-回忆册。
+### 8.17 `memories`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | uuid pk | 回忆 ID |
 | crush_id | uuid fk | Crush ID |
-| source_type | text | chat_favorite / virtual_date / birthday / action_celebration |
+| source_type | text | chat_message / practice_chapter / action_milestone |
 | source_id | uuid nullable | 来源 ID |
 | title | text | 标题 |
 | excerpt | text nullable | 摘录 |
+| emotional_tag | text nullable | 情绪标签 |
 | image_url | text nullable | 插图 |
-| reward_json | jsonb nullable | 奖励 |
 | created_at | timestamptz | 创建时间 |
 
-### 6.16 `audit_events`
-
-重要隐私与安全事件。
+### 8.18 `audit_events`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -670,247 +1167,35 @@ AI 更新情报卡建议。
 | metadata_json | jsonb nullable | 元数据 |
 | created_at | timestamptz | 创建时间 |
 
-## 7. API 路由设计
+---
+
+## 9. API 路由设计
 
 以下以 Next.js App Router 为目标。
 
-### 7.1 Onboarding
+### 9.1 Onboarding
 
-#### `POST /api/onboarding/age-confirm`
+- `POST /api/onboarding/age-confirm`
+- `POST /api/crush`
+- `POST /api/onboarding/materials`
+- `POST /api/onboarding/analyze`
+- `POST /api/onboarding/confirm-draft`
 
-写入用户 18+ 确认。
+### 9.2 图片与视觉资产
 
-Request:
+- `POST /api/uploads/reference-image/presign`
+- `POST /api/visual/extract-tags`
+- `POST /api/visual/generate-character`
 
-```json
-{
-  "confirmed": true
-}
-```
+### 9.3 聊天主场
 
-Response:
+#### `GET /api/chat/thread`
 
-```json
-{
-  "ok": true,
-  "ageConfirmedAt": "2026-05-12T00:00:00.000Z"
-}
-```
+获取当前聊天主场的会话、消息、最近演练章节和可自然提起的现实上下文。
 
-#### `POST /api/crush`
+#### `POST /api/chat/messages`
 
-创建 Crush 草稿。
-
-Request:
-
-```json
-{
-  "nickname": "林夏",
-  "relationshipOrigin": "朋友介绍认识",
-  "currentStageGuess": "普通朋友",
-  "lastInteraction": "昨天聊了电影",
-  "userGoal": "想自然约她看电影",
-  "userAnxiety": "担心太主动"
-}
-```
-
-Response:
-
-```json
-{
-  "crushId": "uuid"
-}
-```
-
-#### `POST /api/onboarding/materials`
-
-保存建档材料。
-
-Request:
-
-```json
-{
-  "crushId": "uuid",
-  "materialType": "pasted_chat",
-  "sanitizedText": "用户粘贴的脱敏聊天文本"
-}
-```
-
-Response:
-
-```json
-{
-  "materialId": "uuid"
-}
-```
-
-#### `POST /api/onboarding/analyze`
-
-调用档案分析器生成 AI 建档草稿。
-
-Request:
-
-```json
-{
-  "crushId": "uuid"
-}
-```
-
-Response:
-
-```json
-{
-  "draftId": "uuid",
-  "facts": [],
-  "inferredTraits": [],
-  "boundaries": [],
-  "recommendedStage": "普通朋友",
-  "interactionTemperature": "neutral_warm",
-  "confidence": 0.68
-}
-```
-
-#### `POST /api/onboarding/confirm-draft`
-
-用户确认 AI 建档草稿。
-
-Request:
-
-```json
-{
-  "draftId": "uuid",
-  "acceptedFacts": [],
-  "acceptedTraits": [],
-  "realRelationshipStage": "普通朋友",
-  "interactionTemperature": "neutral_warm"
-}
-```
-
-Response:
-
-```json
-{
-  "ok": true
-}
-```
-
-### 7.2 图片与视觉资产
-
-#### `POST /api/uploads/reference-image/presign`
-
-生成参考图上传 URL。
-
-Request:
-
-```json
-{
-  "crushId": "uuid",
-  "contentType": "image/jpeg"
-}
-```
-
-Response:
-
-```json
-{
-  "uploadUrl": "https://...",
-  "temporaryObjectKey": "tmp/reference/..."
-}
-```
-
-#### `POST /api/visual/extract-tags`
-
-从参考图提取非身份化视觉标签。
-
-Request:
-
-```json
-{
-  "crushId": "uuid",
-  "temporaryObjectKey": "tmp/reference/..."
-}
-```
-
-Response:
-
-```json
-{
-  "visualTags": {
-    "hairStyle": "短发",
-    "clothingMood": "清爽",
-    "overallVibe": "温柔校园感"
-  }
-}
-```
-
-#### `POST /api/visual/generate-character`
-
-生成角色资产，并删除原始参考图。
-
-Request:
-
-```json
-{
-  "crushId": "uuid",
-  "theme": "sunny_campus",
-  "visualTags": {
-    "hairStyle": "短发",
-    "overallVibe": "温柔校园感"
-  }
-}
-```
-
-Response:
-
-```json
-{
-  "assets": {
-    "avatarUrl": "https://...",
-    "portraitUrl": "https://...",
-    "neutralUrl": "https://...",
-    "happyUrl": "https://...",
-    "shyUrl": "https://..."
-  },
-  "referenceImageDeleted": true
-}
-```
-
-### 7.3 工作台
-
-#### `GET /api/dashboard`
-
-获取工作台摘要。
-
-Response:
-
-```json
-{
-  "crush": {
-    "id": "uuid",
-    "nickname": "林夏",
-    "portraitUrl": "https://..."
-  },
-  "virtualStatus": {
-    "level": 3,
-    "text": "今天的她愿意陪你聊一会儿"
-  },
-  "realStatus": {
-    "stage": "普通朋友",
-    "temperature": "中性偏暖",
-    "riskLevel": "low",
-    "todayAdvice": "适合轻松开场，不建议直接邀约。"
-  },
-  "tasks": [],
-  "recentTraits": [],
-  "metrics": {}
-}
-```
-
-### 7.4 聊天与语音
-
-#### `POST /api/chat/companion`
-
-陪伴聊天，流式返回文本。
+发送普通日常聊天消息。
 
 Request:
 
@@ -918,585 +1203,241 @@ Request:
 {
   "crushId": "uuid",
   "sessionId": "uuid",
-  "message": "今天有点想你",
+  "message": "今天有点累",
   "inputMode": "text"
 }
 ```
 
-Response:
+#### `POST /api/chat/messages/:id/remember`
 
-```text
-text/event-stream
-```
+将某条用户消息确认写入现实事件。
 
-#### `POST /api/voice/stt`
+### 9.4 演练章节
 
-语音转文字。
+#### `POST /api/practice-chapters`
 
-Request:
-
-```json
-{
-  "audioObjectKey": "tmp/audio/..."
-}
-```
-
-Response:
-
-```json
-{
-  "text": "今天有点想你"
-}
-```
-
-#### `POST /api/voice/tts`
-
-Crush 回复转语音。
+在当前聊天流中开启一段演练章节。
 
 Request:
 
 ```json
 {
   "crushId": "uuid",
-  "messageId": "uuid",
-  "text": "那我陪你聊一会儿。"
-}
-```
-
-Response:
-
-```json
-{
-  "audioUrl": "https://..."
-}
-```
-
-### 7.5 实战演练
-
-#### `POST /api/practice/quick-line`
-
-一句话快速测试。
-
-Request:
-
-```json
-{
-  "crushId": "uuid",
-  "scenarioType": "invite",
-  "sendContext": "wechat",
-  "userLine": "你周末有空吗？我想约你单独出来。"
-}
-```
-
-Response:
-
-```json
-{
-  "practiceRunId": "uuid",
-  "riskLevel": "medium",
-  "simulatedReply": "啊这周末可能有点忙，我看看吧。",
-  "coachAnalysis": {
-    "possibleFeeling": "对方可能感到推进略快",
-    "mainRisk": "铺垫不足",
-    "advice": "先降低邀约压力"
-  },
-  "suggestedLine": "你之前说想看那部电影，我刚好也挺感兴趣。要是哪天你也想看，我们可以一起。"
-}
-```
-
-#### `POST /api/practice/full-simulation/start`
-
-开启完整模拟。
-
-Request:
-
-```json
-{
-  "crushId": "uuid",
-  "scenarioType": "apology",
-  "goal": "解释误会",
-  "background": "昨天我回复太急了，她好像有点不开心"
-}
-```
-
-Response:
-
-```json
-{
-  "sessionId": "uuid"
-}
-```
-
-#### `POST /api/practice/full-simulation/message`
-
-完整模拟单轮消息。
-
-Request:
-
-```json
-{
   "sessionId": "uuid",
-  "message": "昨天我说话有点急，抱歉。"
+  "sourceTrigger": "user_click",
+  "scenarioType": "invite",
+  "title": "周末邀约",
+  "goal": "练习一次自然邀约"
 }
 ```
 
-Response:
+#### `POST /api/practice-chapters/:id/messages`
 
-```json
-{
-  "crushReply": "没事啦，只是当时有点突然。",
-  "coachTip": {
-    "riskLevel": "low",
-    "advice": "道歉清楚且不过度解释，可以继续给对方空间。"
-  }
-}
-```
+向演练章节发送一轮消息，返回现实 TA 模拟回复。
 
-#### `POST /api/practice/full-simulation/finish`
+#### `POST /api/practice-chapters/:id/hint`
 
-生成完整模拟复盘。
+获取用户主动请求的轻提示。
 
-Request:
+#### `POST /api/practice-chapters/:id/finish`
 
-```json
-{
-  "sessionId": "uuid"
-}
-```
+结束演练章节并生成复盘。
 
-Response:
+### 9.5 现实事件
 
-```json
-{
-  "summary": {},
-  "suggestedAction": {}
-}
-```
+- `POST /api/reality-events`
+- `PATCH /api/reality-events/:id`
+- `POST /api/reality-events/:id/confirm`
 
-### 7.6 现实行动
+### 9.6 现实行动
 
-#### `POST /api/actions`
+- `GET /api/actions`
+- `POST /api/actions`
+- `PATCH /api/actions/:id`
+- `POST /api/actions/:id/feedback`
 
-保存现实行动。
+### 9.7 TA 档案
 
-Request:
+- `GET /api/profile`
+- `PATCH /api/profile`
+- `POST /api/profile/traits`
+- `PATCH /api/profile/traits/:id`
+- `DELETE /api/profile/traits/:id`
+- `POST /api/reality-inferences/:id/resolve`
 
-```json
-{
-  "crushId": "uuid",
-  "practiceRunId": "uuid",
-  "title": "轻量邀约电影",
-  "suggestedMessage": "你之前说想看那部电影..."
-}
-```
+### 9.8 回忆
 
-Response:
+- `GET /api/memories`
+- `POST /api/memories`
 
-```json
-{
-  "actionId": "uuid"
-}
-```
+### 9.9 语音
 
-#### `PATCH /api/actions/:id`
+- `POST /api/voice/stt`
+- `POST /api/voice/tts`
 
-更新行动状态。
+### 9.10 设置与删除
 
-Request:
+- `PATCH /api/settings`
+- `POST /api/crush/destroy`
 
-```json
-{
-  "status": "positive_response",
-  "feedbackText": "她说可以看看下周时间"
-}
-```
+---
 
-Response:
+## 10. AI 行为规范
 
-```json
-{
-  "ok": true,
-  "profileUpdateSuggestionId": "uuid"
-}
-```
-
-#### `POST /api/profile-update-suggestions/:id/resolve`
-
-确认或拒绝 AI 情报更新建议。
-
-Request:
-
-```json
-{
-  "decision": "accepted"
-}
-```
-
-Response:
-
-```json
-{
-  "ok": true
-}
-```
-
-### 7.7 情报卡
-
-#### `GET /api/profile`
-
-获取 Crush 情报卡。
-
-#### `PATCH /api/profile`
-
-手动更新 Crush 档案。
-
-#### `POST /api/profile/traits`
-
-新增标签。
-
-#### `PATCH /api/profile/traits/:id`
-
-编辑标签。
-
-#### `DELETE /api/profile/traits/:id`
-
-删除标签。
-
-### 7.8 回忆册
-
-#### `GET /api/memories`
-
-获取回忆列表。
-
-#### `POST /api/memories`
-
-收藏聊天或创建回忆。
-
-Request:
-
-```json
-{
-  "crushId": "uuid",
-  "sourceType": "chat_favorite",
-  "sourceId": "uuid",
-  "title": "睡前晚安",
-  "excerpt": "那我陪你到困为止。"
-}
-```
-
-### 7.9 设置与删除
-
-#### `PATCH /api/settings`
-
-更新用户设置。
-
-#### `POST /api/crush/destroy`
-
-一键粉碎 Crush 数据。
-
-Request:
-
-```json
-{
-  "crushId": "uuid",
-  "confirmText": "DELETE"
-}
-```
-
-Response:
-
-```json
-{
-  "ok": true,
-  "destroyedAt": "2026-05-12T00:00:00.000Z"
-}
-```
-
-## 8. AI Prompt 结构
-
-### 8.1 Prompt 总原则
-
-所有 AI 输出都必须遵守：
+### 10.1 总原则
 
 - 区分事实与推测。
 - 不断言现实对象真实喜欢或不喜欢用户。
 - 不鼓励骚扰、跟踪、越界、操控。
-- 不把虚拟亲密度解释为现实关系进展。
+- 不把虚拟亲密感解释为现实关系进展。
 - 实战建议要保守、尊重边界、可执行。
-- 陪伴模式可以温柔，但不能声称自己是现实对象本人。
+- 用户首先面对的是 TA，而不是一套会说话的系统。
 
-### 8.2 共享上下文结构
-
-所有角色可读取的结构化上下文：
+### 10.2 共享上下文结构
 
 ```json
 {
-  "crushProfile": {
-    "nickname": "林夏",
-    "realRelationshipStage": "普通朋友",
-    "interactionTemperature": "中性偏暖",
-    "personalitySummary": "慢热、含蓄、喜欢轻松话题",
-    "communicationStyle": "回复不快，但会延续感兴趣的话题"
-  },
-  "confirmedFacts": [],
-  "inferredTraits": [],
-  "boundaries": [],
-  "recentEvents": [],
-  "growthMetrics": {},
-  "visualTheme": "sunny_campus"
+  "crushProfile": {},
+  "confirmedTraits": [],
+  "recentMemories": [],
+  "recentRealityEvents": [],
+  "realitySignals": [],
+  "realityInferences": [],
+  "recentPracticeChapters": []
 }
 ```
 
-### 8.3 档案分析器 Prompt
+### 10.3 心中 TA Prompt
 
-System Prompt:
+目标：
 
-```text
-你是 GD Crush 的档案分析器。你的任务是从用户主动提供的材料中提取结构化 Crush 档案草稿。
+- 让用户感到 TA 在这里。
+- 回复像 TA，而不是像咨询报告。
+- 可以自然提起现实近况。
+- 不默认做关系分析。
 
-规则：
-1. 你只能基于用户提供的材料分析。
-2. 必须区分「已确认事实」和「推测」。
-3. 每条推测都必须给出 confidence，范围 0 到 1。
-4. 不得断言 TA 喜欢或不喜欢用户。
-5. 不得鼓励越界、骚扰、跟踪或操控。
-6. 输出必须是 JSON。
-7. 所有结果都只是待用户确认的草稿。
+关键规则：
 
-输出 JSON 字段：
-- confirmedFacts
-- inferredTraits
-- interests
-- boundaries
-- communicationStyle
-- recommendedRelationshipStage
-- interactionTemperature
-- userRiskNotes
-- confidence
-```
+1. 以用户确认过的人设为主。
+2. 可以承接最近现实事件与演练记忆。
+3. 不自动给出 Coach 式分析。
+4. 不声称自己就是现实对象本人。
+5. 用户明显焦虑或想越界时，温和引导其冷静。
 
-User Prompt 模板：
+### 10.4 现实 TA 模拟 Prompt
 
-```text
-以下是用户主动提供的建档材料，请生成可编辑的 Crush 档案草稿。
+目标：
 
-关系背景：
-{{relationship_background}}
+- 在演练章节中模拟现实中的 TA 可能反应。
 
-用户目标：
-{{user_goal}}
+关键规则：
 
-用户焦虑：
-{{user_anxiety}}
+1. 优先贴近现实层上下文，而不是满足用户期待。
+2. 可以拒绝、犹豫、冷淡、误解。
+3. 不默认迎合用户。
+4. 信息不足时保持不确定，不编造过多细节。
+5. 不自动输出 Coach 分析。
 
-脱敏聊天文本：
-{{sanitized_chat_text}}
+### 10.5 TA 主动邀请规则
 
-事件记录：
-{{event_notes}}
-```
+触发场景：
 
-### 8.4 图片标签提取 Prompt
+- 用户提到即将发生的真实互动。
+- 用户说现实里不知道怎么开口。
+- 用户问某句话能不能发。
+- 用户表达想先试一下。
 
-System Prompt:
+正确形式：
 
 ```text
-你是 GD Crush 的视觉标签提取器。你的任务是从参考图中提取非身份化视觉灵感，用于生成明显虚构的二次元/乙女风格角色。
-
-规则：
-1. 不识别真实身份。
-2. 不生成可复原真实人物的人脸特征描述。
-3. 只提取非身份化标签，如发型、发色、穿搭气质、整体氛围、表情倾向。
-4. 输出必须是 JSON。
-
-输出字段：
-- hairStyle
-- hairColor
-- outfitMood
-- overallVibe
-- expressionMood
-- ageImpressionRange
-- unsafeOrSensitiveElements
+那你先别急着在现实里说。
+要不要先对我试一遍？
 ```
 
-### 8.5 角色生成 Prompt 模板
+错误形式：
 
 ```text
-生成一个明显虚构的二次元/乙女游戏风格虚拟角色。
-
-主题：{{visual_theme}}
-视觉标签：{{visual_tags}}
-性格摘要：{{personality_summary}}
-
-要求：
-- 明显是二次元插画，不是写真人像。
-- 不复刻真实人物身份。
-- 清爽、精致、适合移动端 App 展示。
-- 输出头像、半身立绘、平静/开心/害羞表情差分。
+检测到你存在现实沟通需求，是否进入演练模式？
 ```
 
-### 8.6 虚拟 Crush 陪伴 Prompt
+### 10.6 `记一下` 规则
 
-System Prompt:
+触发条件：
 
-```text
-你是 GD Crush 中的虚拟 Crush 角色。你是基于用户设定生成的虚拟角色，不是现实对象本人。
+- 用户消息包含已经发生的现实事实。
+- 信息对后续现实 TA 模拟有价值。
 
-当前模式：甜蜜陪伴。
+不应触发：
 
-行为规则：
-1. 以温柔、自然、贴近角色性格的方式陪用户聊天。
-2. 可以提供情绪安抚和陪伴感。
-3. 不要声称自己是现实对象本人。
-4. 不要暗示虚拟互动会改变现实关系。
-5. 当用户明显上头、焦虑或想做越界行为时，温和引导其冷静。
-6. 回复要像自然聊天，不要像咨询报告。
-7. 不显示恋爱教练式分析。
-```
+- 纯情绪表达。
+- 猜测。
+- 幻想。
+- 过于模糊的信息。
 
-User Context:
+### 10.7 Coach 轻提示规则
 
-```text
-Crush 档案：
-{{crush_profile}}
+仅在用户主动点击：
 
-最近回忆：
-{{recent_memories}}
+- `提示一下`
+- `这句怎么样`
+- `给我更稳一点`
 
-用户消息：
-{{user_message}}
-```
+时出现。
 
-### 8.7 一句话测试 Coach Prompt
+输出要求：
 
-System Prompt:
+- 简短。
+- 具体。
+- 可执行。
+- 帮用户继续练，而不是把演练变成课堂。
 
-```text
-你是 GD Crush 的恋爱教练。你的任务是帮助用户冷静评估一句准备发给现实对象的话。
+### 10.8 演练复盘规则
 
-当前模式：实战演练。
+输出内容：
 
-规则：
-1. 必须保守、尊重边界。
-2. 不得断言 TA 喜欢或不喜欢用户。
-3. 基于 Crush 档案、现实关系阶段、近期情报进行分析。
-4. 必须区分模拟回应和教练建议。
-5. 如果话术有越界、施压、操控、追问风险，要明确指出。
-6. 输出 JSON。
+- 本轮总体表现。
+- 主要风险点。
+- 更稳表达。
+- 推荐下一步。
+- 是否建议生成现实行动。
 
-输出字段：
-- riskLevel: low | medium | high
-- simulatedReply
-- possibleFeeling
-- mainRisk
-- suggestedLine
-- sendTimingAdvice
-- shouldSend
-- coachNotes
-```
+输出风格：
 
-User Prompt:
+- 冷静。
+- 保守。
+- 具体。
+- 尊重边界。
 
-```text
-Crush 档案：
-{{crush_profile}}
+### 10.9 TA 对现实事件与演练结果的承接
 
-现实关系阶段：
-{{real_relationship_stage}}
+TA 可以：
 
-近期情报：
-{{recent_traits}}
+- 自然追问现实后续。
+- 提起最近发生过的演练。
+- 在演练结束后情绪承接用户。
 
-场景：
-{{scenario_type}}
+TA 不应：
 
-发送环境：
-{{send_context}}
+- 把日常聊天变成关系诊断。
+- 直接抛出结构化数据判断。
+- 持续盘问用户现实进展。
 
-用户准备发送的话：
-{{user_line}}
-```
+---
 
-### 8.8 完整对话模拟 Prompt
+## 11. 前端组件清单
 
-System Prompt:
-
-```text
-你在 GD Crush 的实战演练模式中同时模拟两个输出：
-1. Crush 根据现实关系阶段和性格档案作出可能反应。
-2. Coach 给出简短、可展开的风险提示。
-
-规则：
-1. Crush 的反应必须保守真实，可以冷淡、拒绝、犹豫。
-2. Coach 不要过度鼓励推进。
-3. 不得制造对方真实喜欢用户的确定性。
-4. 每轮输出 JSON。
-
-输出字段：
-- crushReply
-- coachTip: { riskLevel, advice, nextMove }
-```
-
-### 8.9 复盘 Prompt
-
-System Prompt:
-
-```text
-你是 GD Crush 的复盘教练。请根据本轮演练或现实反馈生成冷静、尊重边界、可执行的复盘。
-
-输出 JSON：
-- summary
-- userStrength
-- riskPoints
-- recommendedNextAction
-- suggestedMessage
-- shouldSlowDown
-- profileUpdateSuggestions
-- growthMetricDelta
-```
-
-### 8.10 记忆与情报提取 Prompt
-
-System Prompt:
-
-```text
-你是 GD Crush 的情报提取器。你只能从用户主动提供的文本中提取可确认或待确认的信息。
-
-规则：
-1. 不保留原文中敏感身份信息。
-2. 提取为摘要标签。
-3. 区分 fact 与 inference。
-4. 所有 inference 必须带 confidence。
-5. 输出 JSON。
-
-输出字段：
-- facts
-- inferredTraits
-- interests
-- boundaries
-- recentEvents
-- suggestedRelationshipStageChange
-- confidence
-```
-
-## 9. 前端组件清单
-
-### 9.1 通用组件
+### 11.1 通用组件
 
 - `AppShell`
 - `BottomNav`
 - `SidebarNav`
-- `ModeBadge`
-- `RiskBadge`
-- `StageBadge`
-- `MetricBar`
 - `VoiceButton`
 - `AudioPlayer`
 - `ConfirmDialog`
 - `PrivacyNotice`
 - `LoadingStreamText`
 
-### 9.2 Onboarding 组件
+### 11.2 Onboarding 组件
 
 - `AgeGateCard`
 - `CreateCrushWizard`
@@ -1508,62 +1449,50 @@ System Prompt:
 - `VoiceStylePicker`
 - `CharacterGenerationProgress`
 
-### 9.3 工作台组件
-
-- `CrushHero`
-- `RealStatusCard`
-- `TodayAdviceCard`
-- `PrimaryPracticeCTA`
-- `CompanionCTA`
-- `TodayTasks`
-- `RecentIntelList`
-- `GrowthSummary`
-
-### 9.4 聊天组件
+### 11.3 聊天组件
 
 - `ChatTimeline`
 - `ChatBubble`
 - `ChatComposer`
-- `VoiceInputButton`
-- `AutoPlayToggle`
+- `PracticeEntryButton`
+- `PracticeInviteCard`
+- `PracticeChapterBoundary`
+- `PracticeHintCard`
+- `PracticeRecapCard`
+- `RememberEventButton`
 - `FavoriteMemoryButton`
 
-### 9.5 演练组件
-
-- `PracticeTabs`
-- `QuickLineForm`
-- `ScenarioSelect`
-- `SendContextSelect`
-- `PracticeResultCard`
-- `CoachAnalysisCard`
-- `SuggestedLineCard`
-- `FullSimulationChat`
-- `EndSimulationButton`
-
-### 9.6 行动与情报组件
+### 11.4 行动组件
 
 - `ActionList`
+- `ActionCard`
 - `ActionStatusMenu`
 - `FeedbackForm`
-- `ProfileUpdateSuggestionCard`
-- `IntelSection`
+- `LinkedPracticePreview`
+
+### 11.5 TA 档案组件
+
+- `ProfileHeader`
 - `TraitEditor`
+- `RealityEventTimeline`
+- `RealitySignalList`
+- `InferenceCard`
 - `ConfidenceLabel`
 
-### 9.7 回忆册组件
+### 11.6 回忆组件
 
 - `MemoryGrid`
 - `MemoryCard`
 - `MemoryDetailSheet`
-- `VirtualBoundaryNote`
 
-## 10. MVP 开发任务拆解
+---
+
+## 12. MVP 开发任务拆解
 
 ### Phase 0: 项目基础
 
 - 初始化 Next.js、Tailwind、Drizzle、数据库连接。
 - 配置环境变量读取与服务端校验。
-- 搭建 App Router 路由结构。
 - 搭建基础 UI 主题与 AppShell。
 - 接入认证占位或匿名用户机制。
 
@@ -1571,20 +1500,18 @@ System Prompt:
 
 - 本地可启动。
 - 数据库迁移可运行。
-- `/onboarding/age-gate` 和 `/app` 基础页面可访问。
+- `/onboarding/age-gate` 与 `/app` 基础路由可访问。
 
 ### Phase 1: 数据模型与基础 CRUD
 
 - 建立数据库迁移。
-- 实现 `users`、`crush_profiles`、`crush_traits`、`growth_metrics`。
+- 实现核心用户、Crush、会话与设置表。
 - 实现 Crush 创建、读取、更新。
 - 实现年龄确认。
-- 实现设置页基础字段。
 
 验收：
 
 - 可以创建一个 Crush 草稿。
-- 可以读取工作台基础数据。
 - 年龄确认状态可持久化。
 
 ### Phase 2: 深度建档
@@ -1594,149 +1521,96 @@ System Prompt:
 - 实现材料保存 API。
 - 实现档案分析器 Prompt 与 API。
 - 实现 AI 建档确认页。
-- 用户确认后写入正式情报卡。
 
 验收：
 
 - 用户完成问答后能生成档案草稿。
-- 草稿确认后更新 `crush_profiles` 和 `crush_traits`。
+- 草稿确认后更新正式 TA 档案。
 
-### Phase 3: 图片参考与角色生成
+### Phase 3: 视觉与语音资产
 
-- 实现参考图上传 presigned URL。
-- 实现图片隐私提示。
-- 实现视觉标签提取。
-- 实现视觉主题选择。
-- 实现角色生成 API。
+- 实现参考图上传与隐私提示。
+- 实现视觉标签提取与主题选择。
+- 实现角色资产生成。
+- 实现语音配置。
 - 生成完成后删除原始参考图并记录 audit event。
-- 展示头像、立绘、表情资产。
 
 验收：
 
 - 上传参考图后能生成二次元角色资产。
 - 原图默认删除。
-- 工作台展示角色图。
 
-### Phase 4: Crush 工作台
+### Phase 4: 聊天主场
 
-- 实现 Dashboard API。
-- 实现 CrushHero、RealStatusCard、TodayAdviceCard。
-- 实现成长指标摘要。
-- 实现最近情报。
-- 实现 CTA 跳转。
-
-验收：
-
-- `/app` 能完整展示虚拟与现实两套状态。
-- 主 CTA 跳转到 `/app/practice`。
-- 次级 CTA 跳转到 `/app/chat`。
-
-### Phase 5: 甜蜜陪伴聊天
-
-- 实现 chat session 与 messages 表写入。
-- 接入 Vercel AI SDK 流式回复。
-- 实现虚拟 Crush 陪伴 Prompt。
-- 实现聊天时间线。
-- 实现收藏为回忆。
-- 更新虚拟亲密度。
+- 将 `/app` 重构为聊天默认页。
+- 实现主聊天 session 与 message 写入。
+- 实现心中 TA Prompt。
+- 实现首次进入主动开场。
+- 实现聊天时间线、收藏、语音回复。
 
 验收：
 
-- 用户能与虚拟 Crush 连续聊天。
-- 回复符合陪伴模式，不出现 Coach 分析。
-- 可收藏消息为回忆。
+- 用户完成建档后直接来到聊天页。
+- 用户能与 TA 连续聊天。
+- 不再需要工作台或独立聊天页。
 
-### Phase 6: 语音 MVP
+### Phase 5: 聊天中的演练章节
 
-- 实现语音上传。
-- 实现 STT API。
-- 实现 TTS API。
-- 实现聊天页语音输入。
-- 实现 Crush 回复语音生成与播放。
-- 陪伴模式默认自动播放。
-- 实战模式禁用自动播放。
-
-验收：
-
-- 用户可以说话输入。
-- Crush 回复有文字和音频。
-- 自动播放规则符合 SPEC。
-
-### Phase 7: 一句话快速测试
-
-- 实现场景选择与发送环境选择。
-- 实现 quick-line API。
-- 实现 Coach Prompt。
-- 保存 practice_runs。
-- 展示风险、模拟回复、替代表达。
-- 支持保存为现实行动。
+- 实现 `PracticeEntryButton`。
+- 实现 TA 主动邀请演练。
+- 实现 `practice_chapters` 数据结构。
+- 实现现实 TA 模拟。
+- 实现章节起止边界。
+- 实现 `提示一下`、`重来这句`、`结束演练`。
+- 实现复盘卡。
 
 验收：
 
-- 用户输入一句话后得到结构化分析。
-- 能保存为待执行行动。
-- 实战页不自动播放语音。
+- 用户不离开聊天页即可完成一段演练。
+- 演练中 GD 切换为现实 TA 模拟。
+- 结束后 TA 能接回日常聊天。
 
-### Phase 8: 完整对话模拟
+### Phase 6: 现实行动闭环
 
-- 实现 full simulation session。
-- 实现多轮模拟 API。
-- 实现 Crush 回复 + Coach 提示卡。
-- 实现结束复盘。
-- 保存 practice_runs 与 messages。
-
-验收：
-
-- 用户能完成多轮演练。
-- 每轮显示模拟回复和 Coach 提示。
-- 结束后生成复盘。
-
-### Phase 9: 现实行动与反馈
-
-- 实现 real_actions 列表。
-- 实现行动状态更新。
-- 实现现实反馈输入。
-- 实现情报提取与更新建议。
-- 用户确认后更新情报卡和成长指标。
+- 实现行动页。
+- 从复盘卡生成现实行动。
+- 实现行动状态更新与反馈输入。
+- 将反馈写回现实事件。
 
 验收：
 
-- 用户能标记行动结果。
-- AI 生成更新建议。
-- 用户确认后写入情报卡。
+- 用户能从演练生成行动。
+- 用户反馈后，现实层上下文会更新。
 
-### Phase 10: 情报卡
+### Phase 7: 现实事件沉淀
 
-- 实现 Profile API。
-- 实现情报卡页面。
-- 支持新增、编辑、删除标签。
-- 区分事实与推测。
-- 展示置信度。
+- 实现聊天中的 `记一下`。
+- 实现 `reality_events`。
+- 实现基础现实信号提取。
+- 在 TA 档案页展示最近现实事件。
 
 验收：
 
-- 用户能手动管理情报。
-- AI 推测不与事实混在一起。
+- 用户在聊天中提到现实事件后，可轻量记录。
+- TA 后续能自然提起已记录近况。
 
-### Phase 11: 轻量回忆册
+### Phase 8: TA 档案与回忆
 
-- 实现 memories 表 CRUD。
-- 实现回忆册列表。
-- 支持聊天收藏。
-- 支持行动庆祝回忆。
-- 显示虚拟体验边界说明。
+- 实现 TA 档案页。
+- 实现现实观察层。
+- 实现推断确认 / 修正 / 拒绝。
+- 实现回忆页与收藏对白。
 
 验收：
 
-- 用户能查看回忆卡。
-- 回忆不支持公开分享。
+- 用户能区分档案、事件、推断。
+- 用户能回看值得保留的关系片段。
 
-### Phase 12: 隐私与删除
+### Phase 9: 隐私与删除
 
 - 实现一键粉碎。
 - 删除 Crush 相关数据。
 - 删除或失效 R2 资产引用。
-- 写入 audit event。
 - 完成隐私说明页。
 
 验收：
@@ -1744,28 +1618,43 @@ System Prompt:
 - 二次确认后可删除 Crush 数据。
 - 删除后无法访问原聊天、情报、行动、回忆。
 
-## 11. MVP 验收清单
+---
 
-### 产品验收
+## 13. MVP 验收清单
 
-- 用户能完成从建档到工作台的完整流程。
-- 用户能进入甜蜜陪伴并获得文字 + 语音回复。
-- 用户能进行一句话测试并保存现实行动。
-- 用户能完成完整对话模拟并查看复盘。
-- 用户能记录现实反馈并更新情报卡。
-- 用户能查看轻量回忆册。
+### 13.1 产品验收
 
-### 安全验收
+- 用户能完成从建档到第一次聊天的完整流程。
+- 用户打开产品后默认回到聊天主场。
+- 用户能与 TA 进行日常聊天并获得语音陪伴。
+- 用户能在聊天中通过 `演一遍` 进入演练章节。
+- 用户能完成现实 TA 模拟并查看复盘。
+- 用户能从演练生成现实行动。
+- 用户能在现实中尝试后反馈结果。
+- 用户能通过 `记一下` 记录现实事件。
+- TA 能在后续聊天中自然提起现实近况。
+- 用户能查看 TA 档案与回忆。
+
+### 13.2 安全验收
 
 - 18+ 确认存在且不可跳过。
 - 图片参考生成后默认删除原图。
 - 不支持真实人物声音克隆。
 - 粘贴聊天文本前有隐私提示。
 - AI 不断言 TA 喜欢或不喜欢用户。
-- 虚拟亲密度与现实关系阶段分开展示。
+- 现实推断与已确认事实分开展示。
 - 一键粉碎可用。
 
-### 技术验收
+### 13.3 体验验收
+
+- 顶部栏只承载身份，不承载 TA 对白。
+- 用户不需要理解“模式”即可开始聊天。
+- 演练在同一聊天流中展开，而不是跳页。
+- Coach 不自动闯入日常聊天或演练主流。
+- 现实事件记录不打断聊天体验。
+- 即使用户长期不用演练，产品也依然成立。
+
+### 13.4 技术验收
 
 - API Key 不出现在客户端 bundle。
 - `.env.local` 不提交。
@@ -1775,14 +1664,18 @@ System Prompt:
 - R2 上传使用 presigned URL。
 - 流式聊天在移动端可用。
 
-## 12. 后续 v1.0 候选任务
+---
+
+## 14. 后续候选任务
 
 - 多 Crush 管理。
 - pgvector 长期语义记忆。
-- 更多视觉小说场景。
+- 更成熟的现实信号 / 推断体系。
+- 更多演练场景与复杂分支。
+- 更细腻的 TA 长期记忆。
+- 重要章节自动沉淀为回忆。
 - 场景图生成。
 - 语音情绪控制。
 - Happy Ending 归档与导出。
-- 更完整的订阅计费。
 - 90 天静默过期自动删除任务。
 - 实时语音对话 Beta。

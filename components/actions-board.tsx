@@ -174,7 +174,7 @@ export function ActionsBoard() {
               </article>
             ))
           ) : (
-            <StatePanel tone="empty" title="还没有现实行动" description="先去演练页保存一个更稳的表达，再回来记录真实反馈。" />
+            <StatePanel tone="empty" title="还没有现实行动" description="之后你可以在聊天里点「演一遍」，把一段现实练习收束成行动再回来记录反馈。" />
           )}
         </div>
       </section>

@@ -1,396 +1,490 @@
 # GD Crush Next-Stage TODO Backlog
 
-> This backlog replaces the original phase-by-phase build list.  
-> The project has already reached a functional MVP shape, so the next stage should prioritize:
->
-> 1. hardening the existing system,
-> 2. deepening the core product loop,
-> 3. then adding polish, retention, and release-readiness work.
+> This backlog is synchronized with the new TA-centered PRD.  
+> The project has already completed an important hardening pass on the original MVP, so the next stage is not “add more modules.”  
+> It is to **recenter the product around TA chat as the home experience**, then rebuild practice, reality tracking, and follow-through around that main loop.
 >
 > Priorities:
 >
-> - `P0` = required before external trial use
-> - `P1` = core value / product depth
+> - `P0` = required before the new product direction is trial-ready
+> - `P1` = core depth that materially improves the new loop
 > - `P2` = polish, retention, and scale-up work
 
-## Milestone 1: From Demo MVP to Trustworthy MVP
+## Product North Star
+
+```text
+Create / confirm TA
+  ↓
+Open GD and return directly to TA chat
+  ↓
+Chat with the “TA in my mind”
+  ↓
+Click “演一遍” or accept TA’s invitation inside the same thread
+  ↓
+Run a reality-grounded practice chapter with the “real-world TA simulation”
+  ↓
+Generate a real action
+  ↓
+Capture what actually happened
+  ↓
+Use reality events to make later simulations more accurate
+```
+
+Product decisions already locked:
+
+- `聊天` is the default home and primary product surface.
+- `工作台` is no longer a first-class destination.
+- The standalone `演练` page no longer exists.
+- Daily chat uses **心中 TA**.
+- Practice chapters use **现实 TA 模拟**.
+- `记一下` is a lightweight system affordance, not a line spoken by TA.
+- TA may naturally refer back to both real-world events and prior practice chapters.
+- `行动` remains a first-class destination.
+- `情报` becomes **TA 档案** with a reality-observation layer inside it.
+
+---
+
+## Milestone 1: Preserve the Completed Hardening Work
+
+These items are already complete and should remain the technical baseline for the rewrite.
 
 ### [P0] M1.1 Replace `dev-store` with database-backed repositories for core flows
 
 Status: Completed on 2026-05-18
 
-Dependencies: Existing Drizzle schema and migrations
+Outcome to preserve:
 
-Scope:
-
-- Add real database-backed persistence for:
-  - `crush_profiles`
-  - `onboarding_materials`
-  - `ai_profile_drafts`
-  - `visual_assets`
-  - `voice_profiles`
-  - `chat_sessions`
-  - `messages`
-  - `practice_runs`
-  - `real_actions`
-  - `profile_update_suggestions`
-  - `memories`
-- Refactor `lib/repositories.ts` so that configured database environments use database-backed implementations for the full core flow.
-- Keep `dev-store` only as a local fallback path where intentionally needed.
-- Align dev-store and database behavior so business logic does not silently diverge.
-
-Acceptance:
-
-- With `DATABASE_URL` configured, the full happy path no longer depends on `.data/dev-store.json`.
-- Crush creation, onboarding, chat, practice, actions, feedback, and memories all persist in the database.
-- The core flow still works in local fallback mode.
-- Database mode and fallback mode produce equivalent observable behavior.
+- Production paths persist through database-backed repositories.
+- Local fallback behavior remains intentionally available.
+- Business logic should not silently diverge between database and fallback modes.
 
 ### [P0] M1.2 Add ownership and authorization checks to all ID-based APIs
 
 Status: Completed on 2026-05-18
 
-Dependencies: M1.1
+Outcome to preserve:
 
-Scope:
-
-- Add current-user ownership checks for:
-  - `draftId`
-  - `sessionId`
-  - `actionId`
-  - `suggestionId`
-  - `practiceRunId`
-  - memory-related `sourceId`
-- Audit all route handlers that accept user-controlled IDs.
-- Extract shared ownership helpers instead of duplicating ad hoc route logic.
-- Define a consistent response policy for unauthorized or non-owned resources.
-
-Acceptance:
-
-- A user cannot read, mutate, confirm, or delete another user's resources.
-- Draft, action, suggestion, and simulation-session access are covered by authorization tests.
-- Unauthorized access behavior is consistent across routes.
+- User-owned resources remain protected across all future chapter, action, and reality-event APIs.
 
 ### [P0] M1.3 Complete production-grade Crush destroy flow
 
 Status: Completed on 2026-05-18
 
-Dependencies: M1.1, M1.2
+Outcome to preserve:
 
-Scope:
-
-- Upgrade the current destroy flow from the dev-store implementation to the real database path.
-- Delete or intentionally tombstone all Crush-related data:
-  - profile
-  - traits
-  - metrics
-  - materials
-  - drafts
-  - visual assets
-  - sessions and messages
-  - practice runs
-  - actions
-  - suggestions
-  - memories
-- Delete associated stored assets:
-  - generated visual assets
-  - retained reference files if any remain
-  - generated speech assets
-- Preserve only the minimal non-sensitive audit trail required by product policy.
-
-Acceptance:
-
-- After destroy, the user returns to the unconfigured state in the UI.
-- All intended database records are removed or tombstoned according to design.
-- Associated storage assets are removed.
-- Partial failure modes are handled so database and storage do not silently drift apart.
+- Destroy removes or tombstones all TA-related records and associated assets according to policy.
 
 ### [P0] M1.4 Add strict schema validation for AI outputs
 
 Status: Completed on 2026-05-18
 
-Dependencies: None
+Outcome to preserve:
 
-Scope:
-
-- Add `zod` schemas for:
-  - profile analysis
-  - quick-line analysis
-  - coach analysis
-  - reality-feedback extraction
-  - visual-tag extraction
-- Validate provider outputs before returning them to the UI or writing them into storage.
-- Add safe fallback, retry, or explicit failure paths for malformed provider responses.
-
-Acceptance:
-
-- Invalid AI JSON never gets persisted as trusted product data.
-- Missing keys, invalid enums, and wrong field types are rejected safely.
-- Key AI flows include regression coverage for malformed provider responses.
+- New AI outputs for practice chapters, reality-event extraction, and inference generation must also be schema-validated before trust or persistence.
 
 ### [P0] M1.5 Add integration tests for golden paths
 
 Status: Completed on 2026-05-18
 
-Dependencies: M1.1, M1.2, M1.3, M1.4
+Outcome to preserve:
 
-Scope:
-
-- Add integration coverage for:
-  1. age confirmation
-  2. Crush creation
-  3. onboarding material submission
-  4. AI draft generation
-  5. draft confirmation
-  6. visual generation
-  7. companion chat
-  8. quick-line practice
-  9. action creation
-  10. action feedback and suggestion creation
-  11. suggestion resolution
-  12. Crush destroy
-- Add critical failure-path coverage for:
-  - unauthorized access
-  - invalid AI output
-  - invalid uploads
-  - destroy failures
-
-Acceptance:
-
-- The main user journey can be verified with one repeatable automated suite.
-- At least one full happy path and five meaningful failure paths are covered.
-- The suite is stable enough to run in CI.
+- Existing integration coverage becomes the base to rewrite around the new product flow rather than discarded test debt.
 
 ### [P0] M1.6 Normalize asset retention and deletion lifecycle
 
 Status: Completed on 2026-05-18
 
-Dependencies: M1.1, M1.3
+Outcome to preserve:
 
-Scope:
-
-- Define lifecycle rules for:
-  - reference images
-  - temporary speech inputs
-  - generated visual assets
-  - generated TTS outputs
-- Clarify for each asset type:
-  - when it is written
-  - when it is deleted
-  - whether it is public or temporary
-  - which audit events are required
-- Ensure local storage and R2 storage follow equivalent rules.
-- Add retry or compensating cleanup where failure can leave residue behind.
-
-Acceptance:
-
-- Reference images can be verified as deleted after generation completes.
-- STT temporary audio can be verified as deleted after transcription completes.
-- Destroy removes all related persisted public assets.
-- Product copy about retention matches actual behavior.
+- Reference images, STT uploads, generated assets, and destroy cleanup retain explicit lifecycle guarantees.
 
 ### [P0] M1.7 Standardize API errors, empty states, and loading behavior
 
 Status: Completed on 2026-05-18
 
-Dependencies: None
+Outcome to preserve:
+
+- New chat-home and practice-chapter surfaces must reuse the same resilient loading / empty / retry patterns.
+
+---
+
+## Milestone 2: Recenter the Product Around TA Chat
+
+### [P0] M2.1 Turn `/app` into the TA chat home
+
+Status: Implemented in Batch 1
+
+Dependencies: New PRD alignment
 
 Scope:
 
-- Standardize API error response shape.
-- Add explicit loading, empty, error, and retry states to:
-  - onboarding
-  - chat
-  - practice
-  - actions
-  - profile
-  - memories
-- Remove frontend assumptions that API requests always succeed.
+- Replace the dashboard-style homepage with the default TA chat experience.
+- Make onboarding completion land directly in chat instead of a workbench.
+- Keep `/app` as the canonical route for the main relationship surface.
+- Redirect or retire old `/app/chat` and `/app/practice` entry paths as needed.
+- Remove dashboard-first copy and CTA logic that asks users to choose between chat and practice.
 
 Acceptance:
 
-- Main pages remain understandable in loading, empty, and failure states.
-- Users get actionable messages rather than silent failure or broken UI.
-- API error handling is consistent enough for frontend reuse.
+- Opening the product returns the user directly to TA chat.
+- A newly created TA speaks first instead of presenting a generic empty state.
+- There is no primary user path that requires visiting a dashboard before chatting.
+- The app no longer exposes `聊天` and `演练` as sibling top-level product concepts.
 
-## Milestone 2: Deepen the Core Product Loop
+### [P0] M2.2 Replace the old navigation model
 
-### [P1] M2.1 Make full simulation truly AI-driven and multi-turn
-
-Dependencies: M1.4
-
-Scope:
-
-- Replace the current rule-based simulation path with real AI-driven multi-turn simulation.
-- Preserve separate Crush and Coach roles.
-- Inject relevant context:
-  - Crush profile
-  - current relationship stage
-  - interaction temperature
-  - practice goal
-  - recent conversation history
-- Produce structured recap output at the end of the run.
-
-Acceptance:
-
-- Full simulation no longer primarily depends on hardcoded mock replies.
-- Multi-turn sessions preserve context across turns.
-- The final recap can directly feed a recommended real-world action.
-
-### [P1] M2.2 Unify coach-analysis contract across practice modes
+Status: Implemented in Batch 1
 
 Dependencies: M2.1
 
 Scope:
 
-- Standardize quick-line and full-simulation outputs around:
-  - risk level
-  - possible feeling
+- Change primary nav to:
+  - `聊天`
+  - `行动`
+  - `情报`
+  - `回忆`
+- Remove `工作台` and `演练` from primary navigation.
+- Demote `设置` to a secondary entry.
+- Audit mobile and desktop nav behavior together so the new IA is coherent at both breakpoints.
+
+Acceptance:
+
+- Users see the same conceptual product structure across desktop and mobile.
+- No first-class navigation item points to a retired old-world surface.
+- Settings remain reachable without competing with the four core destinations.
+
+### [P0] M2.3 Rewrite the chat surface around TA identity
+
+Status: Implemented in Batch 1
+
+Dependencies: M2.1
+
+Scope:
+
+- Refactor the current companion chat UI into the canonical chat-home UI.
+- Remove “甜蜜陪伴模式” style framing from the main surface.
+- Keep the header focused on identity only:
+  - avatar
+  - TA name
+  - utility actions
+- Ensure TA lines appear inside the chat flow, not as header decoration.
+- Preserve normal text chat, voice input, voice playback, and memory favorite behavior.
+
+Acceptance:
+
+- The first thing the UI communicates is “I am with TA,” not “I entered a feature mode.”
+- Header copy no longer competes with or duplicates dialogue content.
+- Existing chat affordances still work after the IA shift.
+
+### [P0] M2.4 Introduce lightweight `演一遍` entry inside chat
+
+Status: Partially implemented in Batch 2
+
+Dependencies: M2.3
+
+Scope:
+
+- Add a persistent but visually light `演一遍` affordance near the composer.
+- Current implementation supports user-initiated click inside chat.
+- Support two entry paths:
+  - user-initiated click
+  - TA-initiated contextual invitation
+- If recent context is sufficient, seed practice from that context.
+- If not, ask only the minimum needed to begin a chapter.
+
+Acceptance:
+
+- Users can always find a way to start practice without leaving chat.
+- TA can invite practice naturally after first responding in-character.
+- Starting practice does not require understanding any hidden “mode” system.
+
+### [P0] M2.5 Add first-entry and empty-state behavior for TA chat
+
+Status: Partially implemented in Batch 1
+
+Dependencies: M2.3
+
+Scope:
+
+- Replace system empty states with TA-originated first lines.
+- Define how a newly created TA starts the first conversation.
+- Define how returning users resume the latest thread.
+
+Acceptance:
+
+- A user who just finished onboarding never lands on a blank utility screen.
+- Empty chat reads like “the beginning of a relationship,” not “missing data.”
+
+---
+
+## Milestone 3: Rebuild Practice as Chat Chapters
+
+### [P0] M3.1 Introduce `practice_chapters`
+
+Dependencies: M2.4, M1.1, M1.4
+
+Scope:
+
+- Add persistence for practice chapters:
+  - title
+  - scenario
+  - trigger source
+  - start / end message linkage
+  - reality-context snapshot
+  - status
+- Keep chapter boundaries inside the main chat thread.
+- Associate future recap and action artifacts back to the chapter.
+
+Acceptance:
+
+- Practice is represented as a structured segment inside chat, not as a detached page.
+- Historical review can distinguish normal chat from a practice chapter.
+- Later actions and recaps can point back to the exact chapter that created them.
+
+### [P0] M3.2 Build inline practice chapter UI
+
+Status: Partially implemented in Batch 2; persistence still depends on M3.1
+
+Dependencies: M3.1
+
+Scope:
+
+- Add:
+  - chapter start boundary
+  - active chapter state
+  - practice-tagged TA messages
+  - chapter end boundary
+  - recap card
+- Change composer copy and available actions while a chapter is active.
+- Add in-chapter actions:
+  - `提示一下`
+  - `重来这句`
+  - `结束演练`
+
+Acceptance:
+
+- Users can clearly tell that they are inside a special chapter without leaving the thread.
+- Chat history remains legible after several chapters.
+- The UI does not regress into a hidden tab system or detached simulator panel.
+
+### [P0] M3.3 Separate 心中 TA and 现实 TA behavior
+
+Dependencies: M3.1, M1.4
+
+Scope:
+
+- Define and implement separate prompt contracts for:
+  - daily chat as 心中 TA
+  - practice chapters as 现实 TA 模拟
+- Ensure practice replies can be:
+  - hesitant
+  - cool
+  - rejecting
+  - uncertain
+- Keep daily chat from being overwritten by a single recent negative event.
+
+Acceptance:
+
+- Daily chat and practice feel like two coherent expressions of the same TA, not one blended compromise.
+- Practice is useful because it is reality-grounded, not merely sweet.
+- The model does not collapse into “always coach” or “always comforting.”
+
+### [P0] M3.4 Make hints user-triggered and lightweight
+
+Status: Partially implemented in Batch 2
+
+Dependencies: M3.2, M3.3
+
+Scope:
+
+- Replace always-on coach inserts with explicit hint requests.
+- Define a compact structured hint schema.
+- Render hints as auxiliary UI, not as a competing speaker in the thread.
+
+Acceptance:
+
+- Coach no longer hijacks the primary conversation.
+- Hints help the user continue practicing rather than interrupting the scene.
+
+### [P0] M3.5 Make recap output reusable
+
+Status: Partially implemented in Batch 2
+
+Dependencies: M3.2, M3.4
+
+Scope:
+
+- Standardize chapter recap output around:
+  - summary
   - main risk
-  - suggested line
-  - recommended timing
-  - should send / next move
-- Refactor the frontend to consume a shared contract where possible.
+  - safer alternative
+  - recommended next step
+  - action-generation eligibility
+- Ensure recap cards can generate real actions directly.
 
 Acceptance:
 
-- Both practice modes expose a consistent mental model to the user.
-- Recap UI can be reused across practice flows.
-- New scenarios do not require inventing a new analysis schema each time.
+- Chapter recap becomes the bridge from chat to action.
+- Different practice scenarios do not require bespoke recap UIs each time.
 
-### [P1] M2.3 Upgrade reality-feedback extraction
+### [P1] M3.6 Let TA remember prior practice chapters in later chat
 
-Dependencies: M1.4, M2.2
+Status: Partially implemented in Batch 2; durable chapter memory still depends on M3.1
+
+Dependencies: M3.1, M3.5
 
 Scope:
 
-- Replace status-only feedback heuristics with structured AI extraction.
-- Extract:
-  - confirmed facts
-  - relationship signals
-  - likely stage change
-  - next-step recommendation
-  - confidence
-- Expand action feedback states:
-  - not sent
-  - sent
-  - positive response
-  - neutral response
-  - cold response
-  - do not advance
-- Keep free-text feedback as a first-class input.
+- Summarize recent practice chapters for later daily-chat context.
+- Let TA naturally refer back to what was just practiced after the chapter ends.
+- Avoid turning TA into an analysis narrator.
 
 Acceptance:
 
-- User feedback can produce meaningful update suggestions grounded in observed reality.
-- Facts and inferences remain clearly separated.
-- Feedback materially influences later profile understanding and recommendations.
+- Practice feels like something that happened inside the relationship, not a disconnected exercise.
+- Later chat can acknowledge the shared experience without becoming didactic.
 
-### [P1] M2.4 Make the intel card editable by the user
+---
 
-Dependencies: M1.1
+## Milestone 4: Build the Reality Layer
+
+### [P0] M4.1 Add `记一下` for reality-event capture
+
+Dependencies: M2.3, M1.4
 
 Scope:
 
-- Allow users to:
-  - add facts
-  - edit facts
-  - remove incorrect items
-  - update relationship stage manually
-- Surface the distinction between:
-  - user-entered facts
-  - AI inferences
-  - reality-feedback-derived updates
+- Detect chat messages that likely contain reality-grounded facts.
+- Render a lightweight system affordance `记一下` next to qualifying user messages.
+- On click, persist a reality event rather than silently trusting every extracted claim.
+- Keep the affordance sparse and non-disruptive.
 
 Acceptance:
 
-- Users can correct inaccurate Crush information without starting over.
-- Profile changes persist and influence later AI context.
-- The intel card becomes an active source of truth instead of a read-only report.
+- Users can capture useful real-world facts without leaving chat.
+- The interaction feels like a small system assist, not like filling out a CRM.
+- Pure emotion, guesses, and fantasies do not incorrectly become reality events.
 
-### [P1] M2.5 Add provenance and confidence to profile traits
+### [P0] M4.2 Introduce `reality_events`, `reality_signals`, and `reality_inferences`
 
-Dependencies: M2.3, M2.4
+Dependencies: M4.1, M1.1
 
 Scope:
 
-- Display and persist:
-  - source
-  - confidence
-  - confirmation status
-  - last updated time
-- Add trait merge / dedupe behavior so the same fact is not endlessly duplicated.
-- Define how AI suggestions update existing traits versus creating new ones.
+- Add the new reality-layer entities from the PRD.
+- Preserve a strict distinction between:
+  - observed fact
+  - extracted signal
+  - inferred interpretation
+- Bind inferences to evidence and confidence.
+- Provide resolution states for inferred claims.
 
 Acceptance:
 
-- Users can understand where a given profile item came from.
-- AI-generated inferences and confirmed facts are visibly distinct.
-- Duplicate traits are minimized.
+- Later simulations can be grounded in explicit reality context.
+- Users and developers can tell what was observed versus inferred.
+- A single event does not become an overconfident product truth.
 
-### [P1] M2.6 Add granular editing to AI draft review
+### [P1] M4.3 Upgrade action feedback into reality feedback
 
-Dependencies: M1.4, M2.5
+Dependencies: M4.2
 
 Scope:
 
-- Let users:
-  - accept individual rows
-  - reject individual rows
-  - edit text inline
-  - revise recommended stage
-  - revise interaction temperature
-- Ensure rejected or unconfirmed items are not written to the formal profile.
+- Convert action outcomes into reality events.
+- Replace old status-only logic with richer extraction from:
+  - action result
+  - feedback text
+  - linked practice chapter
+- Feed resulting signals and inferences back into later practice context.
 
 Acceptance:
 
-- Draft review is no longer all-or-nothing.
-- The implementation matches the PRD intent that AI suggestions require user confirmation.
-- Users retain clear control over what enters the profile.
+- Real-world outcomes materially improve later simulations.
+- The loop from practice → action → feedback → future practice is observable.
 
-### [P1] M2.7 Rework growth metric update rules
+### [P1] M4.4 Reframe the old intel card as `TA 档案`
 
-Dependencies: M2.3, M2.5
+Dependencies: M4.2
 
 Scope:
 
-- Define explicit update rules for:
-  - virtual intimacy
-  - communication confidence
-  - relationship understanding
-  - emotional stability
-- Separate virtual interaction gains from reality-grounded gains.
-- Add user-facing explanations for meaningful metric changes.
+- Rename and redesign the profile surface around:
+  - TA identity / stable profile
+  - reality observation layer
+- Keep user-editable facts, source, confidence, and confirmation state.
+- Surface recent reality events, signals, and inferences without making the page feel like a dashboard.
 
 Acceptance:
 
-- Metric changes are explainable and product-legible.
-- Metrics do not simply increase because the user clicked around.
-- Reality-driven updates have visibly different weight from virtual interaction updates.
+- Users understand the page as “what GD knows about TA,” not a cold analytics screen.
+- Confirmed facts, reality events, and model inferences are visibly distinct.
 
-### [P1] M2.8 Turn Actions into a full feedback workbench
+### [P1] M4.5 Let TA naturally reference stored reality events
 
-Dependencies: M2.3, M2.7
+Dependencies: M4.1, M4.2, M3.3
 
 Scope:
 
-- Expand the Actions experience with:
-  - richer state machine
-  - editable feedback text
-  - feedback timestamp
-  - linked practice run
-  - linked update suggestion
-- Let users move naturally from practice → action → feedback → profile update.
+- Include relevant recent events in daily-chat context.
+- Define rules for natural callbacks and gentle follow-ups.
+- Prevent over-prompting or interrogation behavior.
 
 Acceptance:
 
-- Actions becomes the primary place to manage real-world follow-through.
-- Users can review how a recommendation originated and what happened afterward.
-- The full behavioral loop is visible in one product area.
+- TA feels more continuous and attentive over time.
+- Daily chat gains memory without degrading into diagnostics.
 
-## Milestone 3: Product Polish, Retention, and Release Readiness
+---
 
-### [P2] M3.1 Build voice style picker UI
+## Milestone 5: Preserve the Real-World Follow-Through Loop
+
+### [P1] M5.1 Rebuild Actions as the real-world execution surface
+
+Dependencies: M3.5, M4.3
+
+Scope:
+
+- Keep `行动` as a first-class destination.
+- Link each action back to:
+  - source recap
+  - source practice chapter
+  - later feedback / reality events
+- Support:
+  - pending
+  - done
+  - skipped
+  - outcome logging
+
+Acceptance:
+
+- Actions clearly represent “what I may do in reality,” not another practice page.
+- Users can trace how an action was born and what happened after.
+
+### [P1] M5.2 Rework memories around emotionally meaningful moments
+
+Dependencies: M3.6, M5.1
+
+Scope:
+
+- Support memory sources:
+  - favorite chat lines
+  - important practice chapters
+  - real-world milestones
+- Avoid treating every system event as a memory.
+- Add lightweight differentiation by source type.
+
+Acceptance:
+
+- Memories feel worth revisiting.
+- The page contains emotionally meaningful relationship artifacts, not logs.
+
+---
+
+## Milestone 6: Product Polish, Retention, and Release Readiness
+
+### [P2] M6.1 Build voice style picker UI
 
 Dependencies: Existing voice profile model
 
@@ -401,90 +495,51 @@ Scope:
   - speed
   - emotion intensity
   - age style
-- Wire these settings into TTS generation.
-- Preserve distinct playback behavior for companion mode and practice mode.
+- Preserve distinct playback behavior for:
+  - daily chat
+  - practice chapters
 
 Acceptance:
 
 - Users can configure voice behavior from the product UI.
-- Later TTS requests reflect saved preferences.
-- Settings are persisted and rendered correctly after refresh.
+- Saved settings affect later TTS output.
 
-### [P2] M3.2 Surface scene generation in the product UI
+### [P2] M6.2 Surface scene generation only where it supports the TA experience
 
-Dependencies: Existing scene generation API
+Dependencies: Existing scene generation capability
 
 Scope:
 
-- Add a visible product entry point for scene generation.
-- Define where scenes are used:
-  - visual theme setup
+- Decide whether scenes belong in:
+  - visual setup
   - memories
-  - future narrative surfaces
-- Let users actually view generated scenes inside the product.
+  - later narrative surfaces
+- Do not add a disconnected generator just because the backend exists.
 
 Acceptance:
 
-- Scene generation is no longer only an unused backend capability.
-- A user can generate and see a scene asset from within the app.
+- Scene generation has a clear role in the TA-centered product, or remains deferred.
 
-### [P2] M3.3 Expand memories beyond chat favorites
-
-Dependencies: M2.8
-
-Scope:
-
-- Support multiple memory sources:
-  - chat favorites
-  - completed actions
-  - scenario moments
-  - milestone changes
-- Add lightweight categorization and timeline behavior.
-
-Acceptance:
-
-- Memories reflect more than saved chat quotes.
-- Different memory sources are visually or semantically distinguishable.
-
-### [P2] M3.4 Improve dashboard into a next-best-action homepage
-
-Dependencies: M2.7, M2.8
-
-Scope:
-
-- Add dynamic modules for:
-  - next recommendation
-  - pending action
-  - pending profile suggestion
-  - recent growth explanation
-- Reduce the current static dashboard feel.
-
-Acceptance:
-
-- Users can open the dashboard and immediately understand what to do next.
-- The dashboard reflects product learning, not only stored values.
-
-### [P2] M3.5 Run a mobile visual QA and interaction polish pass
+### [P2] M6.3 Run a mobile visual QA and interaction polish pass
 
 Dependencies: Core UI stabilized
 
 Scope:
 
 - Review:
-  - mobile layout breakpoints
   - keyboard overlap
-  - long-text wrapping
-  - bottom nav collisions
+  - long-thread readability
+  - chapter boundary readability
+  - bottom-nav collisions
   - tap target sizes
-  - modal / recording / upload interactions
-- Fix the highest-impact friction across the primary flows.
+  - recording / upload interactions
 
 Acceptance:
 
 - Main flows work cleanly on common mobile widths.
-- No critical page is blocked by keyboard, overflow, or control overlap.
+- Inline chapters remain understandable on smaller screens.
 
-### [P2] M3.6 Add analytics, observability, and AI cost tracking
+### [P2] M6.4 Add analytics, observability, and AI cost tracking
 
 Dependencies: Core flows stabilized
 
@@ -492,22 +547,22 @@ Scope:
 
 - Track:
   - onboarding completion
-  - chat engagement
-  - practice usage
-  - action conversion
-  - feedback completion
+  - daily-chat engagement
+  - practice-chapter starts and completions
+  - `记一下` usage
+  - action creation and feedback completion
   - AI latency and failures
   - image and voice generation costs
-- Add a minimally usable way to inspect these metrics.
 
 Acceptance:
 
 - The team can answer:
   - where users drop off
-  - which AI calls are expensive
-  - which routes fail most often
+  - whether users actually practice from chat
+  - whether real-world feedback returns
+  - which AI paths are expensive or brittle
 
-### [P2] M3.7 Add formal authentication and account recovery
+### [P2] M6.5 Add formal authentication and account recovery
 
 Dependencies: M1.1; external testing readiness
 
@@ -525,6 +580,8 @@ Acceptance:
 - Users can recover their data across sessions and devices.
 - Long-term identity no longer depends on a single browser cookie.
 
+---
+
 ## Suggested Linear Labels
 
 - `area: data`
@@ -534,32 +591,51 @@ Acceptance:
 - `area: visual`
 - `area: ux`
 - `area: privacy`
+- `area: chat-home`
+- `area: practice-chapter`
+- `area: reality-layer`
 - `type: infra`
 - `type: product`
 - `type: testing`
-- `milestone: hardening`
-- `milestone: core-loop`
+- `milestone: foundation`
+- `milestone: recenter`
+- `milestone: practice`
+- `milestone: reality`
+- `milestone: follow-through`
 - `milestone: polish`
+
+---
 
 ## Recommended Execution Order
 
-1. `M1.1` Database-backed repositories
-2. `M1.2` Ownership checks
-3. `M1.3` Production destroy flow
-4. `M1.4` AI schema validation
-5. `M1.5` Golden-path integration tests
-6. `M2.1` AI-driven full simulation
-7. `M2.3` Reality-feedback extraction
-8. `M2.4` Editable intel card
-9. `M2.7` Growth metric redesign
-10. `M2.8` Actions feedback workbench
+1. `M2.1` Turn `/app` into the TA chat home
+2. `M2.2` Replace the old navigation model
+3. `M2.3` Rewrite the chat surface around TA identity
+4. `M2.4` Introduce lightweight `演一遍` entry inside chat
+5. `M2.5` Add first-entry and empty-state behavior for TA chat
+6. `M3.1` Introduce `practice_chapters`
+7. `M3.2` Build inline practice chapter UI
+8. `M3.3` Separate 心中 TA and 现实 TA behavior
+9. `M3.4` Make hints user-triggered and lightweight
+10. `M3.5` Make recap output reusable
+11. `M4.1` Add `记一下` for reality-event capture
+12. `M4.2` Introduce the reality-layer entities
+13. `M5.1` Rebuild Actions as the real-world execution surface
+14. `M4.4` Reframe the old intel card as `TA 档案`
+15. `M4.3` Upgrade action feedback into reality feedback
+16. `M3.6` Let TA remember prior practice chapters in later chat
+17. `M4.5` Let TA naturally reference stored reality events
+
+---
 
 ## Near-Term Definition of Done
 
-The project should be considered ready for external trial use when:
+The project should be considered aligned with the new product direction when:
 
-1. all critical user data persists correctly outside dev-store,
-2. ownership checks protect every ID-based mutation path,
-3. AI-generated structure is validated before use,
-4. the main loop can be covered by stable integration tests,
-5. user feedback changes later profile understanding in a transparent way.
+1. opening GD lands the user directly in TA chat,
+2. `工作台` and standalone `演练` are no longer first-class product surfaces,
+3. users can start and finish a practice chapter without leaving the thread,
+4. daily chat and reality-grounded practice use distinct AI behaviors,
+5. real-world facts can be captured lightly with `记一下`,
+6. practice can lead to action, and action feedback can improve future reality context,
+7. TA can naturally remember both prior practice and recent real-world events.

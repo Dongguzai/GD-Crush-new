@@ -7,7 +7,7 @@ export default async function ProfilePage() {
   return (
     <main className="mx-auto w-full max-w-6xl px-5 py-6 sm:px-8 lg:py-10">
       <section className="rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-2xl shadow-blush-200/40 backdrop-blur md:p-7">
-        <p className="text-sm font-semibold text-blush-700">情报卡 / 档案页</p>
+        <p className="text-sm font-semibold text-blush-700">TA 档案</p>
         <h1 className="mt-2 font-display text-5xl font-semibold leading-none tracking-normal text-ink-900">
           {profile?.nickname ?? "尚未创建 Crush"}
         </h1>

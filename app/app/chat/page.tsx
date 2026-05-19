@@ -1,5 +1,5 @@
-import { CompanionChat } from "@/components/companion-chat";
+import { redirect } from "next/navigation";
 
-export default function ChatPage() {
-  return <CompanionChat />;
+export default function ChatCompatPage() {
+  redirect("/app");
 }

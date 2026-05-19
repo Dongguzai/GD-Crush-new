@@ -25,7 +25,7 @@ export function PlaceholderPage({
           className="mt-7 inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-ink-900/10 bg-white px-5 text-sm font-bold text-ink-900 shadow-sm transition hover:-translate-y-0.5 hover:bg-blush-50"
         >
           <ArrowLeft aria-hidden="true" size={17} />
-          回到工作台
+          回到聊天
         </Link>
       </section>
     </main>

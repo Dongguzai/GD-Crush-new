@@ -18,7 +18,7 @@ export function SettingsPanel() {
       const payload = await response.json().catch(() => null);
       setMessage(
         response.ok
-          ? "Crush 数据已粉碎。刷新工作台后会回到未建档状态。"
+          ? "Crush 数据已粉碎。回到聊天页后会进入未建档状态。"
           : payload?.message ?? payload?.error ?? "粉碎失败，请稍后重试。",
       );
     });

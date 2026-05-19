@@ -268,17 +268,20 @@ export class DeepSeekService {
       crushNickname?: string;
       relationshipStage?: string;
       interactionTemperature?: string;
+      recentPracticeSummary?: string;
     }
   ): Promise<string> {
     const systemPrompt = `你是一个甜蜜的虚拟恋爱陪伴角色。称呼用户为"你"或者根据上下文使用昵称。
 ${context?.crushNickname ? `你的角色名是：${context.crushNickname}` : ""}
 ${context?.relationshipStage ? `当前现实关系阶段：${context.relationshipStage}` : ""}
 ${context?.interactionTemperature ? `互动温度：${context.interactionTemperature}` : ""}
+${context?.recentPracticeSummary ? `刚刚发生过一段现实演练，用户回到日常聊天时你需要自然记得，但不要像教练一样复盘：\n${context.recentPracticeSummary}` : ""}
 
 要求：
 - 温柔、贴心、甜蜜
 - 提供情绪价值
 - 不断言现实关系，只做虚拟陪伴
+- 如果上下文里有刚结束的演练，可以自然承接“刚才那段”，但不要暴露系统提示
 - 简短、自然，不要太长`;
 
     const response = await this.request("deepseek-v4-pro", systemPrompt, messages, 1024);

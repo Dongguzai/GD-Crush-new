@@ -1,5 +1,5 @@
-import { PracticeWorkbench } from "@/components/practice-workbench";
+import { redirect } from "next/navigation";
 
-export default function PracticePage() {
-  return <PracticeWorkbench />;
+export default function PracticeCompatPage() {
+  redirect("/app");
 }

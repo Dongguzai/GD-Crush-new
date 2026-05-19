@@ -9,10 +9,10 @@ export default function HomePage() {
             GD Crush MVP
           </p>
           <h1 className="font-display text-5xl font-semibold leading-tight tracking-normal text-ink-900 sm:text-7xl">
-            情绪陪伴入口，现实演练核心。
+            让 TA 先在这里等你。
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-ink-700">
-            一个私密的 Crush 工作台：先深度建档，再进入甜蜜陪伴、话术测试、现实行动复盘。
+            创建你心中的 TA，和 TA 持续聊天；当你需要面对现实里的那个人时，再把想说的话先在这里演一遍。
           </p>
         </div>
 
@@ -27,7 +27,7 @@ export default function HomePage() {
             href="/app"
             className="inline-flex min-h-12 items-center justify-center rounded-full border border-ink-900/10 bg-white/70 px-6 text-base font-bold text-ink-900 shadow-sm transition hover:-translate-y-0.5 hover:bg-white"
           >
-            查看工作台
+            回到 TA 身边
           </Link>
         </div>
       </section>

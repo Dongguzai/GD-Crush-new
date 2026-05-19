@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "GD Crush",
-  description: "虚拟 Crush 情感陪伴与现实沟通演练工具",
+  description: "会以你心中的 TA 陪你相处，并在需要时陪你先演一遍的虚拟 Crush",
 };
 
 export const viewport: Viewport = {

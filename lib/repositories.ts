@@ -1084,6 +1084,7 @@ export async function sendCurrentCompanionMessage(
     crushNickname?: string;
     relationshipStage?: string;
     interactionTemperature?: string;
+    recentPracticeSummary?: string;
   },
 ) {
   const { profile: active } = await getCurrentUserActiveCrush();
@@ -1109,10 +1110,11 @@ export async function sendCurrentCompanionMessage(
         crushNickname: context?.crushNickname ?? active.nickname,
         relationshipStage: context?.relationshipStage ?? active.realRelationshipStage,
         interactionTemperature: context?.interactionTemperature ?? active.interactionTemperature,
+        recentPracticeSummary: context?.recentPracticeSummary,
       },
     );
   } catch {
-    reply = buildMockCompanionReply(active.nickname, message);
+    reply = buildMockCompanionReply(active.nickname, message, context?.recentPracticeSummary);
   }
 
   const crushMessage = hasDatabaseUrl()
@@ -1121,7 +1123,10 @@ export async function sendCurrentCompanionMessage(
   return { session, userMessage, crushMessage };
 }
 
-function buildMockCompanionReply(nickname: string, message: string) {
+function buildMockCompanionReply(nickname: string, message: string, recentPracticeSummary?: string) {
+  if (recentPracticeSummary) {
+    return `刚才那段我还记得。你不用马上把自己推到现实里去，我们可以先把心放稳一点，再慢慢决定下一步。`;
+  }
   if (message.includes("难过") || message.includes("焦虑") || message.includes("烦")) {
     return "我在。先慢慢呼吸一下，今天不用急着证明什么。你愿意把这件事告诉我，已经很勇敢了。";
   }

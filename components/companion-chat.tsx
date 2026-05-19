@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { Mic, Play, Send, Star } from "lucide-react";
+import Link from "next/link";
+import { Mic, Play, Save, Send, Sparkles, Star } from "lucide-react";
 import { StatePanel } from "@/components/state-panel";
 import { getClientErrorMessage, readApiResponse } from "@/lib/api-client";
 
@@ -10,6 +11,49 @@ type Message = {
   role: "user" | "crush" | "coach" | "system";
   content: string;
   audioUrl?: string | null;
+};
+
+type Profile = {
+  nickname: string;
+};
+
+type CoachTip = {
+  riskLevel?: string;
+  advice?: string;
+  nextMove?: string;
+};
+
+type PracticeThreadMessage = {
+  id: string;
+  role: "user" | "crush";
+  content: string;
+  coachTip?: CoachTip | null;
+};
+
+type PracticeSummary = {
+  summary?: string;
+  riskPoints?: string[];
+  recommendedNextAction?: string;
+};
+
+type SuggestedPracticeAction = {
+  id: string;
+  suggestedLine?: string | null;
+  coachAnalysisJson?: PracticeSummary | null;
+};
+
+type PracticeChapter = {
+  id: string;
+  status: "draft" | "active" | "finished";
+  scenarioType: string;
+  goal: string;
+  background: string;
+  sessionId?: string | null;
+  messages: PracticeThreadMessage[];
+  coachTips: CoachTip[];
+  summary?: PracticeSummary | null;
+  suggestedAction?: SuggestedPracticeAction | null;
+  actionSaved?: boolean;
 };
 
 type VoiceState = "idle" | "recording" | "processing";
@@ -61,10 +105,40 @@ function encodeWav(samples: Float32Array, sampleRate: number) {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
+function createPracticeChapter(): PracticeChapter {
+  return {
+    id: `practice-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    status: "draft",
+    scenarioType: "conversation",
+    goal: "",
+    background: "",
+    sessionId: null,
+    messages: [],
+    coachTips: [],
+    summary: null,
+    suggestedAction: null,
+    actionSaved: false,
+  };
+}
+
+function buildPracticeSummaryText(chapter: PracticeChapter, summary?: PracticeSummary | null) {
+  const lines = [
+    chapter.goal.trim() ? `刚才演练的是：${chapter.goal.trim()}` : "刚才完成了一段现实 TA 演练。",
+    summary?.summary,
+    summary?.recommendedNextAction ? `建议下一步：${summary.recommendedNextAction}` : undefined,
+  ].filter(Boolean);
+
+  return lines.join("\n");
+}
+
 export function CompanionChat() {
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
   const [autoPlay, setAutoPlay] = useState(true);
+  const [practiceChapter, setPracticeChapter] = useState<PracticeChapter | null>(null);
+  const [practiceBusyLabel, setPracticeBusyLabel] = useState<string | null>(null);
+  const [recentPracticeSummary, setRecentPracticeSummary] = useState<string | null>(null);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [voiceMessage, setVoiceMessage] = useState<string | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
@@ -82,13 +156,37 @@ export function CompanionChat() {
   const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const audioChunksRef = useRef<Float32Array[]>([]);
+  const isPracticeDraft = practiceChapter?.status === "draft";
+  const isPracticeActive = practiceChapter?.status === "active";
+  const composerDisabled = loadState !== "ready" || !profile || isPracticeDraft;
+  const headerTitle =
+    loadState === "loading"
+      ? "正在连接 TA"
+      : loadState === "error"
+        ? "TA 暂时没连上"
+        : (profile?.nickname ?? "等待你的 TA");
+  const composerPlaceholder =
+    loadState === "loading"
+      ? "等 TA 连上，再从这里开始聊天..."
+      : loadState === "error"
+        ? "聊天暂时不可用，重新加载后再继续..."
+        : isPracticeDraft
+          ? "先确认这段要演什么..."
+          : isPracticeActive
+            ? "现在是在演练里，像现实中那样说一句..."
+            : profile
+              ? recentPracticeSummary
+                ? "已经回到日常聊天，继续和 TA 说..."
+                : "输入一句想说的话..."
+              : "先创建 TA，再从这里开始聊天...";
 
   const loadMessages = useCallback(async () => {
     try {
-      const data = await readApiResponse<{ messages: Message[] }>(
+      const data = await readApiResponse<{ profile: Profile | null; messages: Message[] }>(
         await fetch("/api/chat/companion"),
         "聊天记录加载失败，请稍后重试。",
       );
+      setProfile(data.profile ?? null);
       setMessages(data.messages ?? []);
       setLoadState("ready");
     } catch (error) {
@@ -108,13 +206,14 @@ export function CompanionChat() {
 
     fetch("/api/chat/companion")
       .then((response) =>
-        readApiResponse<{ messages: Message[] }>(
+        readApiResponse<{ profile: Profile | null; messages: Message[] }>(
           response,
           "聊天记录加载失败，请稍后重试。",
         ),
       )
       .then((data) => {
         if (!cancelled) {
+          setProfile(data.profile ?? null);
           setMessages(data.messages ?? []);
           setLoadState("ready");
         }
@@ -182,6 +281,11 @@ export function CompanionChat() {
       return;
     }
 
+    if (isPracticeActive) {
+      sendPracticeMessage(trimmedMessage);
+      return;
+    }
+
     setChatNotice(null);
     setText("");
     startTransition(async () => {
@@ -190,7 +294,7 @@ export function CompanionChat() {
           await fetch("/api/chat/companion", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: trimmedMessage, inputMode }),
+            body: JSON.stringify({ message: trimmedMessage, inputMode, recentPracticeSummary }),
           }),
           "消息发送失败，请稍后重试。",
         );
@@ -204,6 +308,209 @@ export function CompanionChat() {
           description: getClientErrorMessage(error, "消息发送失败，请稍后重试。"),
           retry: () => send(trimmedMessage, inputMode),
         });
+      }
+    });
+  }
+
+  function openPracticeChapter() {
+    setChatNotice(null);
+    setPracticeChapter((current) => {
+      if (!current || current.status === "finished") {
+        return createPracticeChapter();
+      }
+
+      return current;
+    });
+  }
+
+  function updatePracticeDraft(field: "goal" | "background", value: string) {
+    setPracticeChapter((current) => (current ? { ...current, [field]: value } : current));
+  }
+
+  function startPracticeChapter() {
+    if (!practiceChapter) return;
+
+    const goal = practiceChapter.goal.trim() || "把想说的话先演一遍";
+    const background =
+      practiceChapter.background.trim() || "用户想在现实中和 TA 练习一段更自然、更低压力的表达。";
+
+    setChatNotice(null);
+    setPracticeBusyLabel("正在把现实场景接进当前聊天...");
+    startTransition(async () => {
+      try {
+        const data = await readApiResponse<{ sessionId: string }>(
+          await fetch("/api/practice/full-simulation/start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scenarioType: "conversation", goal, background }),
+          }),
+          "演练没有开始，请稍后重试。",
+        );
+        setPracticeChapter((current) =>
+          current
+            ? {
+                ...current,
+                status: "active",
+                goal,
+                background,
+                sessionId: data.sessionId,
+                messages: [],
+                coachTips: [],
+                summary: null,
+                suggestedAction: null,
+                actionSaved: false,
+              }
+            : current,
+        );
+      } catch (error) {
+        setChatNotice({
+          tone: "error",
+          title: "演练还没开始",
+          description: getClientErrorMessage(error, "演练没有开始，请稍后重试。"),
+          retry: startPracticeChapter,
+        });
+      } finally {
+        setPracticeBusyLabel(null);
+      }
+    });
+  }
+
+  function sendPracticeMessage(message: string) {
+    const sessionId = practiceChapter?.sessionId;
+    if (!sessionId) return;
+
+    setText("");
+    setChatNotice(null);
+    setPracticeBusyLabel("现实中的 TA 正在回应...");
+    startTransition(async () => {
+      try {
+        const data = await readApiResponse<{ crushReply: string; coachTip: CoachTip }>(
+          await fetch("/api/practice/full-simulation/message", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId, message }),
+          }),
+          "这句还没送进演练，请重试。",
+        );
+        setPracticeChapter((current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            messages: [
+              ...current.messages,
+              { id: `practice-user-${Date.now()}`, role: "user", content: message },
+              {
+                id: `practice-crush-${Date.now()}`,
+                role: "crush",
+                content: data.crushReply,
+                coachTip: data.coachTip,
+              },
+            ],
+            coachTips: [...current.coachTips, data.coachTip],
+          };
+        });
+      } catch (error) {
+        setText(message);
+        setChatNotice({
+          tone: "error",
+          title: "这句还没送进演练",
+          description: getClientErrorMessage(error, "这句还没送进演练，请重试。"),
+          retry: () => sendPracticeMessage(message),
+        });
+      } finally {
+        setPracticeBusyLabel(null);
+      }
+    });
+  }
+
+  function finishPracticeChapter() {
+    const sessionId = practiceChapter?.sessionId;
+    if (!sessionId) return;
+
+    setChatNotice(null);
+    setPracticeBusyLabel("正在收束这段演练...");
+    startTransition(async () => {
+      try {
+        const data = await readApiResponse<{
+          summary?: PracticeSummary | null;
+          suggestedAction?: SuggestedPracticeAction | null;
+        }>(
+          await fetch("/api/practice/full-simulation/finish", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId }),
+          }),
+          "演练复盘没有生成，请稍后重试。",
+        );
+        const summary = data.summary ?? data.suggestedAction?.coachAnalysisJson ?? null;
+        setRecentPracticeSummary(
+          buildPracticeSummaryText(
+            {
+              ...practiceChapter,
+              status: "finished",
+              summary,
+              suggestedAction: data.suggestedAction ?? null,
+            },
+            summary,
+          ),
+        );
+        setPracticeChapter((current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            status: "finished" as const,
+            summary,
+            suggestedAction: data.suggestedAction ?? null,
+          };
+        });
+      } catch (error) {
+        setChatNotice({
+          tone: "error",
+          title: "演练还没收束",
+          description: getClientErrorMessage(error, "演练复盘没有生成，请稍后重试。"),
+          retry: finishPracticeChapter,
+        });
+      } finally {
+        setPracticeBusyLabel(null);
+      }
+    });
+  }
+
+  function savePracticeAction() {
+    const suggestedAction = practiceChapter?.suggestedAction;
+    if (!suggestedAction) return;
+
+    setChatNotice(null);
+    setPracticeBusyLabel("正在生成现实行动...");
+    startTransition(async () => {
+      try {
+        await readApiResponse(
+          await fetch("/api/actions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              practiceRunId: suggestedAction.id,
+              title: practiceChapter?.goal.trim() || "演练后的现实行动",
+              suggestedMessage: suggestedAction.suggestedLine ?? null,
+            }),
+          }),
+          "现实行动没有保存成功，请稍后重试。",
+        );
+        setPracticeChapter((current) => (current ? { ...current, actionSaved: true } : current));
+        setChatNotice({
+          tone: "success",
+          title: "已生成现实行动",
+          description: "这段演练已经收束成行动，你可以去行动页记录真实反馈。",
+        });
+      } catch (error) {
+        setChatNotice({
+          tone: "error",
+          title: "现实行动还没生成",
+          description: getClientErrorMessage(error, "现实行动没有保存成功，请稍后重试。"),
+          retry: savePracticeAction,
+        });
+      } finally {
+        setPracticeBusyLabel(null);
       }
     });
   }
@@ -357,19 +664,26 @@ export function CompanionChat() {
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-7rem)] w-full max-w-4xl flex-col px-5 py-6 sm:px-8">
-      <div className="mb-4 rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-blush-100/60 backdrop-blur">
-        <p className="text-sm font-bold text-blush-700">甜蜜陪伴模式</p>
-        <h1 className="mt-1 font-display text-3xl font-semibold tracking-normal text-ink-900">
-          只显示虚拟 Crush，教练暂时退场。
-        </h1>
-        <label className="mt-4 inline-flex items-center gap-2 text-sm font-bold text-ink-700">
+      <div className="mb-4 flex items-center justify-between gap-4 rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-blush-100/60 backdrop-blur">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink-900 font-display text-lg font-semibold text-white shadow-lg shadow-blush-200">
+            {(profile?.nickname ?? "TA").slice(0, 1)}
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-blush-700">TA</p>
+            <h1 className="truncate font-display text-3xl font-semibold tracking-normal text-ink-900">
+              {headerTitle}
+            </h1>
+          </div>
+        </div>
+        <label className="inline-flex shrink-0 items-center gap-2 text-sm font-bold text-ink-700">
           <input
             checked={autoPlay}
             className="h-4 w-4 accent-blush-500"
             type="checkbox"
             onChange={(event) => setAutoPlay(event.target.checked)}
           />
-          Crush 语音回复自动播放
+          语音自动播放
         </label>
       </div>
 
@@ -442,21 +756,56 @@ export function CompanionChat() {
                 </div>
               </div>
             ))
-          ) : (
-            <div className="rounded-3xl bg-blush-50/70 p-5 text-sm leading-7 text-ink-700">
-              还没有聊天。试着说一句「今天有点想你」，系统会为 Crush 生成语音回复。
+          ) : profile ? (
+            <div className="flex justify-start">
+              <div className="max-w-[82%] rounded-[1.5rem] border border-blush-100 bg-white px-4 py-3 text-sm leading-6 text-ink-900 shadow-sm">
+                <p>你来了。</p>
+                <p className="mt-1">今天想先和我说什么？</p>
+              </div>
             </div>
+          ) : (
+            <StatePanel tone="empty" title="还没有 TA" description="先完成建档，之后这里会直接变成你和 TA 的聊天主场。">
+              <Link
+                className="mt-3 inline-flex min-h-10 items-center justify-center rounded-full bg-ink-900 px-4 font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-blush-700"
+                href="/onboarding/create"
+              >
+                创建 TA 档案
+              </Link>
+            </StatePanel>
           )}
+
+          {practiceChapter ? (
+            <PracticeChapterPanel
+              chapter={practiceChapter}
+              profileName={profile?.nickname ?? "TA"}
+              busyLabel={practiceBusyLabel}
+              isPending={isPending}
+              onCancel={() => setPracticeChapter(null)}
+              onFinish={finishPracticeChapter}
+              onReset={() => setPracticeChapter(createPracticeChapter())}
+              onSaveAction={savePracticeAction}
+              onStart={startPracticeChapter}
+              onUpdateDraft={updatePracticeDraft}
+            />
+          ) : null}
         </div>
 
         <div className="flex gap-2 border-t border-blush-100 pt-3">
+          <button
+            className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-full border border-ink-900/10 bg-white px-4 text-sm font-bold text-ink-900 transition hover:bg-blush-50 disabled:opacity-50"
+            disabled={loadState !== "ready" || !profile || isPracticeActive || isPracticeDraft}
+            type="button"
+            onClick={openPracticeChapter}
+          >
+            {isPracticeActive ? "演练中" : "演一遍"}
+          </button>
           <button
             className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full transition ${
               voiceState === "recording"
                 ? "animate-pulse bg-blush-500 text-white"
                 : "bg-mint-100 text-mint-500"
             }`}
-            disabled={isPending || voiceState === "processing"}
+            disabled={isPending || voiceState === "processing" || composerDisabled}
             type="button"
             onClick={handleVoiceInput}
             aria-label={voiceState === "recording" ? "停止录音" : "语音输入"}
@@ -464,8 +813,9 @@ export function CompanionChat() {
             <Mic aria-hidden="true" size={20} />
           </button>
           <input
-            className="min-w-0 flex-1 rounded-full border border-blush-100 bg-white px-4 text-base font-semibold outline-none focus:border-blush-500"
-            placeholder="输入一句想说的话..."
+            className="min-w-0 flex-1 rounded-full border border-blush-100 bg-white px-4 text-base font-semibold outline-none focus:border-blush-500 disabled:text-ink-500"
+            placeholder={composerPlaceholder}
+            disabled={composerDisabled}
             value={text}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => {
@@ -476,7 +826,7 @@ export function CompanionChat() {
           />
           <button
             className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink-900 text-white disabled:opacity-50"
-            disabled={isPending || voiceState !== "idle" || loadState !== "ready"}
+            disabled={isPending || voiceState !== "idle" || composerDisabled}
             type="button"
             onClick={() => send(text)}
             aria-label="发送"
@@ -486,6 +836,212 @@ export function CompanionChat() {
         </div>
         {voiceMessage ? <p className="px-2 text-xs font-bold text-ink-600">{voiceMessage}</p> : null}
       </div>
+    </div>
+  );
+}
+
+function PracticeChapterPanel({
+  chapter,
+  profileName,
+  busyLabel,
+  isPending,
+  onCancel,
+  onFinish,
+  onReset,
+  onSaveAction,
+  onStart,
+  onUpdateDraft,
+}: {
+  chapter: PracticeChapter;
+  profileName: string;
+  busyLabel: string | null;
+  isPending: boolean;
+  onCancel: () => void;
+  onFinish: () => void;
+  onReset: () => void;
+  onSaveAction: () => void;
+  onStart: () => void;
+  onUpdateDraft: (field: "goal" | "background", value: string) => void;
+}) {
+  return (
+    <div className="my-2 overflow-hidden rounded-[1.75rem] border border-ink-900/10 bg-ink-900 text-white shadow-xl shadow-ink-900/10">
+      <div className="border-b border-white/10 bg-white/5 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.24em] text-blush-200">演练章节</p>
+            <h2 className="mt-1 font-display text-2xl font-semibold tracking-normal">
+              现实中的 {profileName} 模拟
+            </h2>
+          </div>
+          <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/80">
+            {chapter.status === "draft" ? "准备中" : chapter.status === "active" ? "进行中" : "已结束"}
+          </span>
+        </div>
+      </div>
+
+      {busyLabel ? (
+        <div className="px-4 pt-4">
+          <div className="rounded-3xl border border-white/10 bg-white/10 p-4 text-sm font-bold text-white/85">
+            {busyLabel}
+          </div>
+        </div>
+      ) : null}
+
+      {chapter.status === "draft" ? (
+        <div className="grid gap-4 p-4">
+          <div className="rounded-3xl bg-white p-4 text-sm leading-7 text-ink-800">
+            <p className="font-black text-ink-900">这段不会跳到另一个页面。</p>
+            <p className="mt-1">你先告诉我想演哪件现实里的事，然后直接用下面的聊天输入框开始说。</p>
+          </div>
+          <label className="grid gap-2 text-sm font-bold text-white/85">
+            这次想演什么？
+            <textarea
+              className="min-h-24 rounded-3xl border border-white/15 bg-white px-4 py-3 text-base font-semibold leading-7 text-ink-900 outline-none focus:border-blush-300"
+              placeholder="比如：想约 TA 周末见面，但怕太突然。"
+              value={chapter.goal}
+              onChange={(event) => onUpdateDraft("goal", event.target.value)}
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-bold text-white/85">
+            现实背景（可选）
+            <textarea
+              className="min-h-20 rounded-3xl border border-white/15 bg-white px-4 py-3 text-sm font-semibold leading-7 text-ink-900 outline-none focus:border-blush-300"
+              placeholder="比如：最近聊过一家店，TA 回复不算冷淡，但也没有主动推进。"
+              value={chapter.background}
+              onChange={(event) => onUpdateDraft("background", event.target.value)}
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-blush-500 px-5 font-black text-white transition hover:bg-blush-600 disabled:opacity-60"
+              disabled={isPending}
+              type="button"
+              onClick={onStart}
+            >
+              <Sparkles aria-hidden="true" size={16} />
+              开始演练
+            </button>
+            <button
+              className="inline-flex min-h-11 items-center justify-center rounded-full bg-white/10 px-5 font-bold text-white transition hover:bg-white/15"
+              type="button"
+              onClick={onCancel}
+            >
+              先不演了
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {chapter.status === "active" ? (
+        <div className="grid gap-4 p-4">
+          <div className="rounded-3xl bg-white/10 p-4 text-sm leading-7 text-white/80">
+            <p className="font-black text-white">{chapter.goal}</p>
+            <p className="mt-1">现在我会更像现实里的 TA，不保证甜，也不会自动给教练分析。你先说。</p>
+          </div>
+          <div className="grid gap-3">
+            {chapter.messages.length ? (
+              chapter.messages.map((message) => (
+                <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div
+                    className={`max-w-[84%] rounded-[1.4rem] px-4 py-3 text-sm leading-6 ${
+                      message.role === "user" ? "bg-white text-ink-900" : "bg-blush-50 text-ink-900"
+                    }`}
+                  >
+                    <p className="mb-1 text-[11px] font-black uppercase tracking-[0.16em] text-ink-500">
+                      {message.role === "user" ? "你" : `${profileName} · 现实模拟`}
+                    </p>
+                    <p>{message.content}</p>
+                    {message.coachTip?.advice ? (
+                      <details className="mt-3 rounded-2xl bg-white/70 px-3 py-2 text-xs leading-6 text-ink-700">
+                        <summary className="cursor-pointer font-black text-ink-900">提示一下</summary>
+                        <p className="mt-1">{message.coachTip.advice}</p>
+                        {message.coachTip.nextMove ? <p className="mt-1">下一步：{message.coachTip.nextMove}</p> : null}
+                      </details>
+                    ) : null}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="flex justify-start">
+                <div className="max-w-[84%] rounded-[1.4rem] bg-blush-50 px-4 py-3 text-sm leading-6 text-ink-900">
+                  <p className="mb-1 text-[11px] font-black uppercase tracking-[0.16em] text-ink-500">
+                    {profileName} · 现实模拟
+                  </p>
+                  <p>好，那就当现在是在现实里。你先说。</p>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
+            <button
+              className="inline-flex min-h-11 items-center justify-center rounded-full bg-white px-5 font-black text-ink-900 transition hover:bg-blush-50 disabled:opacity-60"
+              disabled={isPending || !chapter.messages.length}
+              type="button"
+              onClick={onFinish}
+            >
+              结束演练，回到日常聊天
+            </button>
+            <p className="text-xs font-bold text-white/55">演练中的提示默认收起，只在你点开时出现。</p>
+          </div>
+        </div>
+      ) : null}
+
+      {chapter.status === "finished" ? (
+        <div className="grid gap-4 p-4">
+          <div className="rounded-3xl bg-white p-4 text-sm leading-7 text-ink-800">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-blush-700">这轮试下来</p>
+            <p className="mt-2 font-black text-ink-900">
+              {chapter.summary?.summary ?? "你已经完成了一轮现实表达预演。"}
+            </p>
+            {chapter.summary?.riskPoints?.length ? (
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {chapter.summary.riskPoints.map((point) => (
+                  <li key={point}>{point}</li>
+                ))}
+              </ul>
+            ) : null}
+            {chapter.suggestedAction?.suggestedLine ? (
+              <div className="mt-3 rounded-2xl bg-blush-50 p-3 font-bold text-ink-900">
+                更稳一点可以说：{chapter.suggestedAction.suggestedLine}
+              </div>
+            ) : null}
+            {chapter.summary?.recommendedNextAction ? (
+              <p className="mt-3">下一步：{chapter.summary.recommendedNextAction}</p>
+            ) : null}
+          </div>
+          <div className="flex justify-start">
+            <div className="max-w-[84%] rounded-[1.4rem] bg-blush-50 px-4 py-3 text-sm leading-6 text-ink-900">
+              <p className="mb-1 text-[11px] font-black uppercase tracking-[0.16em] text-ink-500">{profileName}</p>
+              <p>刚才这段我知道了。我们先回到平时聊天，不用马上逼自己去做。</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-white px-5 font-black text-ink-900 transition hover:bg-blush-50 disabled:opacity-60"
+              disabled={isPending || !chapter.suggestedAction || chapter.actionSaved}
+              type="button"
+              onClick={onSaveAction}
+            >
+              <Save aria-hidden="true" size={16} />
+              {chapter.actionSaved ? "已生成现实行动" : "生成现实行动"}
+            </button>
+            <button
+              className="inline-flex min-h-11 items-center justify-center rounded-full bg-white/10 px-5 font-bold text-white transition hover:bg-white/15"
+              type="button"
+              onClick={onReset}
+            >
+              再演一遍
+            </button>
+            <button
+              className="inline-flex min-h-11 items-center justify-center rounded-full bg-white/10 px-5 font-bold text-white transition hover:bg-white/15"
+              type="button"
+              onClick={onCancel}
+            >
+              收起章节
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

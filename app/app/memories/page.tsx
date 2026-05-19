@@ -24,8 +24,8 @@ export default async function MemoriesPage() {
             <div className="rounded-3xl bg-blush-50 p-5 text-ink-700">
               <p className="font-black text-ink-900">暂无回忆</p>
               <p className="mt-1">可以在聊天中收藏一段 Crush 回复，系统会把它放进这里。</p>
-              <Link className="mt-3 inline-flex rounded-full bg-white px-4 py-2 font-bold text-ink-900" href="/app/chat">
-                去聊天页收藏
+              <Link className="mt-3 inline-flex rounded-full bg-white px-4 py-2 font-bold text-ink-900" href="/app">
+                回到聊天收藏
               </Link>
             </div>
           )}

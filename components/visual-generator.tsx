@@ -156,7 +156,7 @@ export function VisualGenerator() {
         onClick={generate}
       >
         <WandSparkles aria-hidden="true" size={18} />
-        {isPending ? "正在生成..." : "生成角色并进入工作台"}
+        {isPending ? "正在生成..." : "生成角色并去见 TA"}
       </button>
     </div>
   );

@@ -6,6 +6,7 @@ import { badRequestResponse, handleApiError } from "@/lib/errors";
 const requestSchema = z.object({
   message: z.string().trim().min(1).max(2000),
   inputMode: z.enum(["text", "voice"]).default("text"),
+  recentPracticeSummary: z.string().trim().max(1200).optional().nullable(),
 });
 
 export async function GET() {
@@ -34,6 +35,7 @@ export async function POST(request: Request) {
         crushNickname: activeCrush.nickname,
         relationshipStage: activeCrush.realRelationshipStage,
         interactionTemperature: activeCrush.interactionTemperature,
+        recentPracticeSummary: parsed.data.recentPracticeSummary ?? undefined,
       } : undefined
     );
 
