@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getCurrentCompanionChat, sendCurrentCompanionMessage, getCurrentUserActiveCrush } from "@/lib/repositories";
+import { getCurrentCompanionChat, sendCurrentCompanionMessage, getCurrentUserActiveCrush, getCurrentPracticeChapters } from "@/lib/repositories";
+import type { PersistedPracticeChapter } from "@/lib/repositories";
 import { badRequestResponse, handleApiError } from "@/lib/errors";
 
 const requestSchema = z.object({
@@ -29,6 +30,28 @@ export async function POST(request: Request) {
 
     const { profile: activeCrush } = await getCurrentUserActiveCrush();
 
+    // Fetch recent practice chapters for context
+    let recentPracticeChapters: Array<{
+      title: string;
+      scenarioType: string;
+      summary?: string;
+      recommendedNextAction?: string;
+    }> = [];
+    if (activeCrush) {
+      const chapters: PersistedPracticeChapter[] = await getCurrentPracticeChapters(activeCrush.id);
+      // Get finished chapters with summaries, most recent first
+      recentPracticeChapters = chapters
+        .filter((chapter: PersistedPracticeChapter) => chapter.status === "finished" && chapter.summary?.summary)
+        .slice(-3)
+        .reverse()
+        .map((chapter: PersistedPracticeChapter) => ({
+          title: chapter.goal,
+          scenarioType: chapter.scenarioType,
+          summary: chapter.summary?.summary ?? undefined,
+          recommendedNextAction: chapter.summary?.recommendedNextAction ?? undefined,
+        }));
+    }
+
     const result = await sendCurrentCompanionMessage(
       parsed.data.message,
       activeCrush ? {
@@ -36,6 +59,7 @@ export async function POST(request: Request) {
         relationshipStage: activeCrush.realRelationshipStage,
         interactionTemperature: activeCrush.interactionTemperature,
         recentPracticeSummary: parsed.data.recentPracticeSummary ?? undefined,
+        recentPracticeChapters,
       } : undefined
     );
 

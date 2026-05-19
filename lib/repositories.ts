@@ -121,7 +121,7 @@ type PracticeChapterMessage = {
   coachTip?: Record<string, unknown> | null;
 };
 
-type PersistedPracticeChapter = {
+export type PersistedPracticeChapter = {
   id: string;
   status: "active" | "finished";
   scenarioType: string;
@@ -1662,6 +1662,12 @@ export async function sendCurrentCompanionMessage(
     relationshipStage?: string;
     interactionTemperature?: string;
     recentPracticeSummary?: string;
+    recentPracticeChapters?: Array<{
+      title: string;
+      scenarioType: string;
+      summary?: string;
+      recommendedNextAction?: string;
+    }>;
     recentRealityEvents?: RealityEventOutput[];
     recentRealitySignals?: RealitySignalOutput[];
     recentRealityInferences?: RealityInferenceOutput[];
@@ -1716,6 +1722,7 @@ export async function sendCurrentCompanionMessage(
         relationshipStage: context?.relationshipStage ?? active.realRelationshipStage,
         interactionTemperature: context?.interactionTemperature ?? active.interactionTemperature,
         recentPracticeSummary: context?.recentPracticeSummary,
+        recentPracticeChapters: context?.recentPracticeChapters,
         recentRealityEvents,
         recentRealitySignals,
         recentRealityInferences,
@@ -2160,6 +2167,157 @@ export async function getCurrentActionsAndSuggestions() {
   };
 }
 
+export async function getCurrentSuggestions() {
+  const { profile: active } = await getCurrentUserActiveCrush();
+  if (!active) {
+    return [];
+  }
+
+  if (!hasDatabaseUrl()) {
+    return getDevSuggestions(active.id);
+  }
+
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(profileUpdateSuggestions)
+    .where(eq(profileUpdateSuggestions.crushId, active.id))
+    .orderBy(asc(profileUpdateSuggestions.createdAt));
+
+  return rows.map(mapDbSuggestion);
+}
+
+/** Hydrated action with source chapter context and linked reality layer data */
+export type HydratedAction = {
+  id: string;
+  crushId: string;
+  practiceRunId: string | null;
+  title: string;
+  suggestedMessage: string | null;
+  status: string;
+  feedbackText: string | null;
+  executedAt: string | Date | null;
+  createdAt: string | Date;
+  updatedAt: string | Date;
+  sourceChapter: {
+    id: string;
+    title: string;
+    scenarioType: string;
+    background: string;
+    recapSummary: string | null;
+    coachAnalysisJson: PracticeChapterSummary | null;
+  } | null;
+  linkedRealityLayer: {
+    realityEvents: RealityEventOutput[];
+    realitySignals: RealitySignalOutput[];
+    realityInferences: RealityInferenceOutput[];
+  };
+};
+
+/**
+ * Returns actions hydrated with source practice chapter info and linked reality events/signals/inferences.
+ * This is the primary data source for the Actions page.
+ */
+export async function getCurrentHydratedActions(): Promise<HydratedAction[]> {
+  const { profile: active } = await getCurrentUserActiveCrush();
+  if (!active) {
+    return [];
+  }
+
+  const realityLayer = await getCurrentRealityLayer(active.id);
+
+  if (!hasDatabaseUrl()) {
+    const actions = await getDevActions(active.id);
+    const chapters = await getDevPracticeChaptersForCrush(active.id);
+    return actions.map((action) => {
+      const chapter = chapters.find((c) => c.practiceRunId === action.practiceRunId) ?? null;
+      const linkedEvents = realityLayer.realityEvents.filter(
+        (e: RealityEventOutput) => (e.extractionJson as Record<string, unknown>)?.actionId === action.id,
+      );
+      const linkedSignals = realityLayer.realitySignals.filter(
+        (s: RealitySignalOutput) => linkedEvents.some((e: RealityEventOutput) => e.id === s.eventId),
+      );
+      const linkedInferences = realityLayer.realityInferences.filter(
+        (i: RealityInferenceOutput) => linkedEvents.some((e: RealityEventOutput) => e.id === i.eventId),
+      );
+      return {
+        ...action,
+        practiceRunId: action.practiceRunId ?? null,
+        suggestedMessage: action.suggestedMessage ?? null,
+        feedbackText: action.feedbackText ?? null,
+        executedAt: action.executedAt ?? null,
+        sourceChapter: chapter
+          ? {
+              id: chapter.id,
+              title: chapter.title,
+              scenarioType: chapter.scenarioType,
+              background: getBackgroundFromContext(chapter.realityContextJson),
+              recapSummary: asSummary(chapter.recapJson)?.summary ?? null,
+              coachAnalysisJson: asSummary(chapter.recapJson),
+            }
+          : null,
+        linkedRealityLayer: {
+          realityEvents: linkedEvents,
+          realitySignals: linkedSignals,
+          realityInferences: linkedInferences,
+        },
+      };
+    });
+  }
+
+  const db = getDb();
+  const actions = await db
+    .select()
+    .from(realActions)
+    .where(eq(realActions.crushId, active.id))
+    .orderBy(asc(realActions.createdAt));
+
+  if (!actions.length) {
+    return [];
+  }
+
+  const runIds = actions
+    .map((a) => a.practiceRunId)
+    .filter((id): id is string => Boolean(id));
+  const chapters = runIds.length
+    ? await db
+        .select()
+        .from(practiceChapters)
+        .where(inArray(practiceChapters.practiceRunId, runIds))
+    : [];
+
+  return actions.map((action) => {
+    const chapter = chapters.find((c) => c.practiceRunId === action.practiceRunId) ?? null;
+    const linkedEvents = realityLayer.realityEvents.filter(
+      (e: RealityEventOutput) => (e.extractionJson as Record<string, unknown>)?.actionId === action.id,
+    );
+    const linkedSignals = realityLayer.realitySignals.filter(
+      (s: RealitySignalOutput) => linkedEvents.some((e: RealityEventOutput) => e.id === s.eventId),
+    );
+    const linkedInferences = realityLayer.realityInferences.filter(
+      (i: RealityInferenceOutput) => linkedEvents.some((e: RealityEventOutput) => e.id === i.eventId),
+    );
+    return {
+      ...action,
+      sourceChapter: chapter
+        ? {
+            id: chapter.id,
+            title: chapter.title,
+            scenarioType: chapter.scenarioType,
+            background: getBackgroundFromContext(chapter.realityContextJson),
+            recapSummary: asSummary(chapter.recapJson)?.summary ?? null,
+            coachAnalysisJson: asSummary(chapter.recapJson),
+          }
+        : null,
+      linkedRealityLayer: {
+        realityEvents: linkedEvents,
+        realitySignals: linkedSignals,
+        realityInferences: linkedInferences,
+      },
+    };
+  });
+}
+
 async function createDevActionFeedbackRealityLayer(
   action: {
     id: string;
@@ -2505,3 +2663,5 @@ export async function destroyCurrentCrush(confirmText: string) {
 
   return { destroyedAt: destroyedAt.toISOString() };
 }
+
+export { getCurrentPracticeChapters };

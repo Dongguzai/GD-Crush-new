@@ -332,7 +332,7 @@ Acceptance:
 
 ### [P1] M3.6 Let TA remember prior practice chapters in later chat
 
-Status: Partially implemented in Batch 2; durable chapter memory still depends on M3.1
+Status: Implemented on 2026-05-19
 
 Dependencies: M3.1, M3.5
 
@@ -416,7 +416,7 @@ Acceptance:
 
 ### [P1] M4.4 Reframe the old intel card as `TA 档案`
 
-Status: Partially implemented in Batch 4
+Status: Implemented on 2026-05-19
 
 Dependencies: M4.2
 
@@ -436,7 +436,7 @@ Acceptance:
 
 ### [P1] M4.5 Let TA naturally reference stored reality events
 
-Status: Implemented in Batch 5
+Status: Implemented on 2026-05-19 (Batch 5)
 
 Dependencies: M4.1, M4.2, M3.3
 
@@ -456,6 +456,8 @@ Acceptance:
 ## Milestone 5: Preserve the Real-World Follow-Through Loop
 
 ### [P1] M5.1 Rebuild Actions as the real-world execution surface
+
+Status: Implemented on 2026-05-19
 
 Dependencies: M3.5, M4.3
 

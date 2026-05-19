@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { badRequestResponse, handleApiError, notFoundResponse } from "@/lib/errors";
-import { createCurrentAction, getCurrentActionsAndSuggestions } from "@/lib/repositories";
+import { createCurrentAction, getCurrentHydratedActions, getCurrentSuggestions } from "@/lib/repositories";
 
 const requestSchema = z.object({
   practiceRunId: z.string().uuid().optional().nullable(),
@@ -11,7 +11,11 @@ const requestSchema = z.object({
 
 export async function GET() {
   try {
-    return NextResponse.json(await getCurrentActionsAndSuggestions());
+    const [hydratedActions, suggestions] = await Promise.all([
+      getCurrentHydratedActions(),
+      getCurrentSuggestions(),
+    ]);
+    return NextResponse.json({ actions: hydratedActions, suggestions });
   } catch (error) {
     return handleApiError(error);
   }
