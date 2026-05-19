@@ -10,6 +10,8 @@ const requestSchema = z.object({
   excerpt: z.string().max(500).optional().nullable(),
   imageUrl: z.string().optional().nullable(),
   rewardJson: z.record(z.string(), z.unknown()).optional().nullable(),
+  emotionTag: z.string().optional().default("warm"),
+  importanceLevel: z.number().int().min(1).max(3).optional().default(1),
 });
 
 export async function GET() {

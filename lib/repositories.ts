@@ -1862,6 +1862,8 @@ export async function createCurrentMemory(input: {
   excerpt?: string | null;
   imageUrl?: string | null;
   rewardJson?: Record<string, unknown> | null;
+  emotionTag?: string;
+  importanceLevel?: number;
 }) {
   const { profile: active } = await getCurrentUserActiveCrush();
   if (!active) {
@@ -1872,15 +1874,21 @@ export async function createCurrentMemory(input: {
     return null;
   }
 
+  const memoryInput = {
+    ...input,
+    emotionTag: input.emotionTag ?? "warm",
+    importanceLevel: input.importanceLevel ?? 1,
+  };
+
   if (!hasDatabaseUrl()) {
-    return createDevMemory({ crushId: active.id, ...input });
+    return createDevMemory({ crushId: active.id, ...memoryInput });
   }
 
   const [memory] = await getDb()
     .insert(memories)
     .values({
       crushId: active.id,
-      ...input,
+      ...memoryInput,
     })
     .returning();
 
@@ -2103,6 +2111,31 @@ export async function finishCurrentSimulation(sessionId: string) {
       finishedAt: now,
     })
     .where(eq(practiceChapters.practiceSessionId, session.id));
+
+  // M5.2: Create memory for completed practice chapter
+  const completedChapter = await db
+    .select()
+    .from(practiceChapters)
+    .where(eq(practiceChapters.practiceSessionId, session.id))
+    .then((rows) => rows[0]);
+
+  if (completedChapter) {
+    const emotionTag = "encouraging";
+    const title = `完成演练：${completedChapter.title ?? "一次演练"}`;
+    const summary = typeof run.coachAnalysisJson === "object" && run.coachAnalysisJson
+      ? (run.coachAnalysisJson as Record<string, unknown>).summary as string | undefined
+      : undefined;
+
+    await db.insert(memories).values({
+      crushId: active.id,
+      sourceType: "practice_chapter",
+      sourceId: completedChapter.id,
+      title,
+      excerpt: summary ?? "完成了一次演练，为现实行动做好准备。",
+      emotionTag,
+      importanceLevel: 2,
+    });
+  }
 
   return run;
 }
@@ -2518,6 +2551,38 @@ export async function updateCurrentAction(
       realActionCount: current.realActionCount + 1,
       communicationConfidence: Math.min(100, current.communicationConfidence + 5),
     }));
+
+    // M5.2: Create memory for executed action
+    let emotionTag = "warm";
+    let importanceLevel = 2;
+
+    if (input.status === "positive_response") {
+      emotionTag = "milestone";
+      importanceLevel = 3;
+    } else if (input.status === "cold_response") {
+      emotionTag = "gentle";
+      importanceLevel = 1;
+    }
+
+    const actionTitle = existing.title ?? "一次现实行动";
+    let title = `完成行动：${actionTitle}`;
+    let excerpt = `执行了行动「${actionTitle}」`;
+
+    if (input.feedbackText?.trim()) {
+      excerpt += `。反馈：${input.feedbackText.trim().slice(0, 100)}`;
+    } else {
+      excerpt += `，结果：${actionStatusLabel(input.status)}`;
+    }
+
+    await db.insert(memories).values({
+      crushId: action.crushId,
+      sourceType: "action_completed",
+      sourceId: action.id,
+      title,
+      excerpt,
+      emotionTag,
+      importanceLevel,
+    });
   }
 
   const realityLayer = await createDbActionFeedbackRealityLayer(action, input);

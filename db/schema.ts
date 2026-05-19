@@ -296,5 +296,7 @@ export const memories = pgTable("memories", {
   excerpt: text("excerpt"),
   imageUrl: text("image_url"),
   rewardJson: jsonb("reward_json"),
+  emotionTag: text("emotion_tag").notNull().default("warm"),
+  importanceLevel: integer("importance_level").notNull().default(1),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

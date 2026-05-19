@@ -230,6 +230,8 @@ type DevMemory = {
   excerpt?: string | null;
   imageUrl?: string | null;
   rewardJson?: Record<string, unknown> | null;
+  emotionTag: string;
+  importanceLevel: number;
   createdAt: string;
 };
 
@@ -826,12 +828,16 @@ export async function createDevMemory(input: {
   excerpt?: string | null;
   imageUrl?: string | null;
   rewardJson?: Record<string, unknown> | null;
+  emotionTag?: string;
+  importanceLevel?: number;
 }) {
   const data = await readStore();
   const createdAt = now();
   const memory: DevMemory = {
     id: crypto.randomUUID(),
     createdAt,
+    emotionTag: input.emotionTag ?? "warm",
+    importanceLevel: input.importanceLevel ?? 1,
     ...input,
   };
   data.memories.push(memory);
@@ -1203,6 +1209,30 @@ export async function finishDevSimulation(sessionId: string) {
     chapter.suggestedLine = run.suggestedLine ?? null;
     chapter.updatedAt = session.updatedAt;
     chapter.finishedAt = session.updatedAt;
+
+    // M5.2: Create memory for completed practice chapter in dev mode
+    const summary = typeof run.coachAnalysisJson === "object" && run.coachAnalysisJson
+      ? (run.coachAnalysisJson as Record<string, unknown>).summary as string | undefined
+      : undefined;
+
+    const memory: DevMemory = {
+      id: crypto.randomUUID(),
+      crushId: session.crushId,
+      sourceType: "practice_chapter",
+      sourceId: chapter.id,
+      title: `完成演练：${chapter.title ?? "一次演练"}`,
+      excerpt: summary ?? "完成了一次演练，为现实行动做好准备。",
+      emotionTag: "encouraging",
+      importanceLevel: 2,
+      createdAt: session.updatedAt,
+    };
+    data.memories.push(memory);
+    const metrics = data.growthMetrics.find((item) => item.crushId === session.crushId);
+    if (metrics) {
+      metrics.memoryFragments += 1;
+      metrics.virtualIntimacy = Math.min(999, metrics.virtualIntimacy + 5);
+      metrics.updatedAt = session.updatedAt;
+    }
   }
   await writeStore(data);
   return run;
@@ -1275,6 +1305,40 @@ export async function updateDevAction(actionId: string, input: { status: string;
     metrics.realActionCount += 1;
     metrics.communicationConfidence = Math.min(100, metrics.communicationConfidence + 5);
     metrics.updatedAt = updatedAt;
+
+    // M5.2: Create memory for executed action in dev mode
+    let emotionTag = "warm";
+    let importanceLevel = 2;
+    if (input.status === "positive_response") {
+      emotionTag = "milestone";
+      importanceLevel = 3;
+    } else if (input.status === "cold_response") {
+      emotionTag = "gentle";
+      importanceLevel = 1;
+    }
+
+    const actionTitle = action.title ?? "一次现实行动";
+    let excerpt = `执行了行动「${actionTitle}」`;
+    if (input.feedbackText?.trim()) {
+      excerpt += `。反馈：${input.feedbackText.trim().slice(0, 100)}`;
+    }
+
+    const memory: DevMemory = {
+      id: crypto.randomUUID(),
+      crushId: action.crushId,
+      sourceType: "action_completed",
+      sourceId: action.id,
+      title: `完成行动：${actionTitle}`,
+      excerpt,
+      emotionTag,
+      importanceLevel,
+      createdAt: updatedAt,
+    };
+    data.memories.push(memory);
+    if (metrics) {
+      metrics.memoryFragments += 1;
+      metrics.virtualIntimacy = Math.min(999, metrics.virtualIntimacy + 5);
+    }
   }
   await writeStore(data);
   return { action, suggestion };

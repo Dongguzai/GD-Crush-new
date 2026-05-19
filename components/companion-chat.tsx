@@ -705,6 +705,8 @@ export function CompanionChat() {
               title: "收藏对白",
               excerpt: message.content,
               rewardJson: { virtualIntimacy: 5, memoryFragments: 1 },
+              emotionTag: "intimate",
+              importanceLevel: 2,
             }),
           }),
           "收藏失败，请稍后重试。",
@@ -760,7 +762,7 @@ export function CompanionChat() {
   }
 
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-7rem)] w-full max-w-4xl flex-col px-5 py-6 sm:px-8">
+    <div className="mx-auto flex w-full max-w-4xl flex-col px-5 py-6 sm:px-8 lg:min-h-[calc(100vh-7rem)]">
       <div className="mb-4 flex items-center justify-between gap-4 rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-blush-100/60 backdrop-blur">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink-900 font-display text-lg font-semibold text-white shadow-lg shadow-blush-200">
@@ -784,7 +786,7 @@ export function CompanionChat() {
         </label>
       </div>
 
-      <div className="flex flex-1 flex-col gap-3 overflow-hidden rounded-[2rem] border border-white/70 bg-white/65 p-4 shadow-2xl shadow-blush-200/40 backdrop-blur">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden rounded-[2rem] border border-white/70 bg-white/65 p-4 shadow-2xl shadow-blush-200/40 backdrop-blur">
         {chatNotice ? (
           <StatePanel
             tone={chatNotice.tone}
@@ -832,7 +834,7 @@ export function CompanionChat() {
                           />
                         ) : null}
                         <button
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blush-50 text-blush-700"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-blush-50 text-blush-700"
                           type="button"
                           onClick={() => {
                             if (message.audioUrl) {
@@ -845,15 +847,15 @@ export function CompanionChat() {
                           }}
                           aria-label="播放语音"
                         >
-                          <Play aria-hidden="true" size={15} />
+                          <Play aria-hidden="true" size={16} />
                         </button>
                         <button
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-sun-100 text-ink-700"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-sun-100 text-ink-700"
                           type="button"
                           onClick={() => favorite(message)}
                           aria-label="收藏为回忆"
                         >
-                          <Star aria-hidden="true" size={15} />
+                          <Star aria-hidden="true" size={16} />
                         </button>
                       </div>
                     ) : null}
@@ -905,51 +907,54 @@ export function CompanionChat() {
           ) : null}
         </div>
 
-        <div className="flex gap-2 border-t border-blush-100 pt-3">
-          <button
-            className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-full border border-ink-900/10 bg-white px-4 text-sm font-bold text-ink-900 transition hover:bg-blush-50 disabled:opacity-50"
-            disabled={loadState !== "ready" || !profile || isPracticeActive || isPracticeDraft}
-            type="button"
-            onClick={openPracticeChapter}
-          >
-            {isPracticeActive ? "演练中" : "演一遍"}
-          </button>
-          <button
-            className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full transition ${
-              voiceState === "recording"
-                ? "animate-pulse bg-blush-500 text-white"
-                : "bg-mint-100 text-mint-500"
-            }`}
-            disabled={isPending || voiceState === "processing" || composerDisabled}
-            type="button"
-            onClick={handleVoiceInput}
-            aria-label={voiceState === "recording" ? "停止录音" : "语音输入"}
-          >
-            <Mic aria-hidden="true" size={20} />
-          </button>
-          <input
-            className="min-w-0 flex-1 rounded-full border border-blush-100 bg-white px-4 text-base font-semibold outline-none focus:border-blush-500 disabled:text-ink-500"
-            placeholder={composerPlaceholder}
-            disabled={composerDisabled}
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                send(text);
-              }
-            }}
-          />
-          <button
-            className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink-900 text-white disabled:opacity-50"
-            disabled={isPending || voiceState !== "idle" || composerDisabled}
-            type="button"
-            onClick={() => send(text)}
-            aria-label="发送"
-          >
-            <Send aria-hidden="true" size={20} />
-          </button>
+        {/* Sticky input area for mobile - visible above bottom nav */}
+        <div className="sticky bottom-0 -mx-4 -mb-4 rounded-b-[2rem] border-t border-blush-100 bg-white/95 p-4 backdrop-blur lg:relative lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
+          <div className="flex gap-2">
+            <button
+              className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-full border border-ink-900/10 bg-white px-4 text-sm font-bold text-ink-900 transition hover:bg-blush-50 disabled:opacity-50"
+              disabled={loadState !== "ready" || !profile || isPracticeActive || isPracticeDraft}
+              type="button"
+              onClick={openPracticeChapter}
+            >
+              {isPracticeActive ? "演练中" : "演一遍"}
+            </button>
+            <button
+              className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full transition ${
+                voiceState === "recording"
+                  ? "animate-pulse bg-blush-500 text-white"
+                  : "bg-mint-100 text-mint-500"
+              }`}
+              disabled={isPending || voiceState === "processing" || composerDisabled}
+              type="button"
+              onClick={handleVoiceInput}
+              aria-label={voiceState === "recording" ? "停止录音" : "语音输入"}
+            >
+              <Mic aria-hidden="true" size={20} />
+            </button>
+            <input
+              className="min-w-0 flex-1 rounded-full border border-blush-100 bg-white px-4 text-base font-semibold outline-none focus:border-blush-500 disabled:text-ink-500"
+              placeholder={composerPlaceholder}
+              disabled={composerDisabled}
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  send(text);
+                }
+              }}
+            />
+            <button
+              className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink-900 text-white disabled:opacity-50"
+              disabled={isPending || voiceState !== "idle" || composerDisabled}
+              type="button"
+              onClick={() => send(text)}
+              aria-label="发送"
+            >
+              <Send aria-hidden="true" size={20} />
+            </button>
+          </div>
+          {voiceMessage ? <p className="mt-1 px-2 text-xs font-bold text-ink-600 lg:hidden">{voiceMessage}</p> : null}
         </div>
-        {voiceMessage ? <p className="px-2 text-xs font-bold text-ink-600">{voiceMessage}</p> : null}
       </div>
     </div>
   );
@@ -984,7 +989,7 @@ function PracticeChapterPanel({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.24em] text-blush-200">演练章节</p>
-            <h2 className="mt-1 font-display text-2xl font-semibold tracking-normal">
+            <h2 className="mt-1 text-xl font-semibold tracking-normal sm:text-2xl">
               现实中的 {profileName} 模拟
             </h2>
           </div>
