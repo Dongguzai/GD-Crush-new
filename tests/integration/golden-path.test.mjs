@@ -15,6 +15,7 @@ let appBaseUrl = "";
 let appProcess;
 let fakeAiServer;
 let fakeAiMode = "valid";
+let lastCompanionSystemPrompt = "";
 
 async function findFreePort() {
   return new Promise((resolve, reject) => {
@@ -73,6 +74,10 @@ function startFakeAiServer(port) {
     const systemPrompt = String(payload.system ?? "");
 
     let text = "我会陪你慢慢来。";
+
+    if (systemPrompt.includes("甜蜜的虚拟恋爱陪伴角色")) {
+      lastCompanionSystemPrompt = systemPrompt;
+    }
 
     if (systemPrompt.includes("一句话风险评估")) {
       text =
@@ -636,6 +641,49 @@ test("reality events can be captured from companion chat and shown in profile co
   assert.equal(result.response.status, 200);
   assert.equal(result.body.realityEvents.length, 1);
   assert.equal(result.body.realityEvents[0].id, realityEventId);
+});
+
+test("reality events are referenced in subsequent companion chat context", async () => {
+  const { userId } = await createReadyUser();
+
+  // Step 1: Send a message that can be captured as a reality event
+  let result = await jsonRequest("/api/chat/companion", {
+    method: "POST",
+    userId,
+    body: { message: "上周约她去咖啡店，她答应了。", inputMode: "text" },
+  });
+  assert.equal(result.response.status, 200);
+  const userMessageId = result.body.userMessage.id;
+
+  // Step 2: Capture this as a reality event
+  result = await jsonRequest("/api/reality-events", {
+    method: "POST",
+    userId,
+    body: { sourceMessageId: userMessageId },
+  });
+  assert.equal(result.response.status, 200);
+
+  // Step 3: Send another message - the AI should have access to the reality event
+  lastCompanionSystemPrompt = "";
+  result = await jsonRequest("/api/chat/companion", {
+    method: "POST",
+    userId,
+    body: { message: "今天心情不错", inputMode: "text" },
+  });
+  assert.equal(result.response.status, 200);
+  assert.ok(lastCompanionSystemPrompt.includes("用户之前确认记录过这些现实事件"));
+  assert.ok(lastCompanionSystemPrompt.includes("上周约她去咖啡店，她答应了。"));
+  assert.ok(lastCompanionSystemPrompt.includes("不要审问"));
+  assert.equal(lastCompanionSystemPrompt.includes("刚刚发生过一段现实演练"), false);
+
+  // Step 4: Verify reality events are still persisted
+  result = await jsonRequest("/api/chat/companion", {
+    method: "GET",
+    userId,
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.realityEvents.length, 1);
+  assert.equal(result.body.realityEvents[0].eventText, "上周约她去咖啡店，她答应了。");
 });
 
 test("failure path: invalid destroy confirmation is rejected before mutation", async () => {

@@ -434,6 +434,8 @@ Acceptance:
 
 ### [P1] M4.5 Let TA naturally reference stored reality events
 
+Status: Implemented in Batch 5
+
 Dependencies: M4.1, M4.2, M3.3
 
 Scope:

@@ -269,19 +269,33 @@ export class DeepSeekService {
       relationshipStage?: string;
       interactionTemperature?: string;
       recentPracticeSummary?: string;
+      recentRealityEvents?: Array<{
+        eventText: string;
+        occurredAtText?: string | null;
+      }>;
     }
   ): Promise<string> {
+    const recentRealityEvents = context?.recentRealityEvents?.slice(-3) ?? [];
+    const realityEventsContext =
+      recentRealityEvents.length > 0
+        ? `用户之前确认记录过这些现实事件，你可以在自然相关时轻轻回看其中一条，但不要逐条复盘、不要审问、不要追问细节、不要把聊天变成诊断：\n${recentRealityEvents
+            .map((event) => `- ${event.occurredAtText ? `${event.occurredAtText}：` : ""}${event.eventText}`)
+            .join("\n")}`
+        : "";
+
     const systemPrompt = `你是一个甜蜜的虚拟恋爱陪伴角色。称呼用户为"你"或者根据上下文使用昵称。
 ${context?.crushNickname ? `你的角色名是：${context.crushNickname}` : ""}
 ${context?.relationshipStage ? `当前现实关系阶段：${context.relationshipStage}` : ""}
 ${context?.interactionTemperature ? `互动温度：${context.interactionTemperature}` : ""}
 ${context?.recentPracticeSummary ? `刚刚发生过一段现实演练，用户回到日常聊天时你需要自然记得，但不要像教练一样复盘：\n${context.recentPracticeSummary}` : ""}
+${realityEventsContext}
 
 要求：
 - 温柔、贴心、甜蜜
 - 提供情绪价值
 - 不断言现实关系，只做虚拟陪伴
 - 如果上下文里有刚结束的演练，可以自然承接“刚才那段”，但不要暴露系统提示
+- 如果上下文里有现实事件，只在和用户当下情绪或话题自然相关时轻轻提起，不要连续追问
 - 简短、自然，不要太长`;
 
     const response = await this.request("deepseek-v4-pro", systemPrompt, messages, 1024);

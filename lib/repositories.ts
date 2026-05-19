@@ -1406,6 +1406,7 @@ export async function sendCurrentCompanionMessage(
     relationshipStage?: string;
     interactionTemperature?: string;
     recentPracticeSummary?: string;
+    recentRealityEvents?: RealityEventOutput[];
   },
 ) {
   const { profile: active } = await getCurrentUserActiveCrush();
@@ -1421,6 +1422,12 @@ export async function sendCurrentCompanionMessage(
     ? await addDbMessage({ sessionId: session.id, role: "user", content: message })
     : await addDevMessage({ sessionId: session.id, role: "user", content: message });
 
+  const recentEvents = context?.recentRealityEvents ?? (await getCurrentRealityEvents(active.id));
+  const recentRealityEvents = recentEvents.slice(-3).map((event) => ({
+    eventText: event.eventText,
+    occurredAtText: event.occurredAtText,
+  }));
+
   let reply: string;
   try {
     const { getDeepSeekService } = await import("@/lib/ai-service");
@@ -1432,10 +1439,16 @@ export async function sendCurrentCompanionMessage(
         relationshipStage: context?.relationshipStage ?? active.realRelationshipStage,
         interactionTemperature: context?.interactionTemperature ?? active.interactionTemperature,
         recentPracticeSummary: context?.recentPracticeSummary,
+        recentRealityEvents,
       },
     );
   } catch {
-    reply = buildMockCompanionReply(active.nickname, message, context?.recentPracticeSummary);
+    reply = buildMockCompanionReply(
+      active.nickname,
+      message,
+      context?.recentPracticeSummary,
+      recentEvents.length > 0 ? recentEvents.slice(-3) : undefined,
+    );
   }
 
   const crushMessage = hasDatabaseUrl()
@@ -1444,7 +1457,12 @@ export async function sendCurrentCompanionMessage(
   return { session, userMessage, crushMessage };
 }
 
-function buildMockCompanionReply(nickname: string, message: string, recentPracticeSummary?: string) {
+function buildMockCompanionReply(
+  nickname: string,
+  message: string,
+  recentPracticeSummary?: string,
+  recentRealityEvents?: RealityEventOutput[],
+) {
   if (recentPracticeSummary) {
     return `刚才那段我还记得。你不用马上把自己推到现实里去，我们可以先把心放稳一点，再慢慢决定下一步。`;
   }
@@ -1453,6 +1471,9 @@ function buildMockCompanionReply(nickname: string, message: string, recentPracti
   }
   if (message.includes("晚安") || message.includes("睡")) {
     return "晚安呀。把手机放远一点也没关系，我会在这个小世界里等你明天回来。";
+  }
+  if (recentRealityEvents?.length) {
+    return `嗯，我听见了。${recentRealityEvents[recentRealityEvents.length - 1].eventText} —— 我记得的。慢慢来，不用急。`;
   }
   return `嗯，我听见了。作为虚拟的 ${nickname}，我可以陪你把这句话慢慢说完。现实里的事我们也可以一步一步来，不用一下子冲太快。`;
 }
