@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
-import { Trash2, Volume2, Play, Check } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Trash2, Volume2, Play, Check, User, LogOut } from "lucide-react";
 
 type VoiceSettings = {
   autoPlayCompanionVoice: boolean;
@@ -28,12 +30,18 @@ const voiceAgeOptions = [
 ] as const;
 
 export function SettingsPanel() {
+  const router = useRouter();
   const [confirmText, setConfirmText] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [settings, setSettings] = useState<VoiceSettings | null>(null);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [previewText, setPreviewText] = useState("你好呀，今天想和你聊聊天。");
+
+  // Auth state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   // Load settings on mount
   useEffect(() => {
@@ -52,6 +60,39 @@ export function SettingsPanel() {
     }
     loadSettings();
   }, []);
+
+  // Load auth status on mount
+  useEffect(() => {
+    async function loadAuthStatus() {
+      try {
+        const response = await fetch("/api/auth/me");
+        if (response.ok) {
+          const data = await response.json();
+          setIsAuthenticated(data.isAuthenticated);
+          setUserEmail(data.email);
+        }
+      } catch (error) {
+        console.error("Failed to load auth status:", error);
+      } finally {
+        setAuthLoading(false);
+      }
+    }
+    loadAuthStatus();
+  }, []);
+
+  // Logout handler
+  function handleLogout() {
+    startTransition(async () => {
+      try {
+        await fetch("/api/auth/logout", { method: "POST" });
+        setIsAuthenticated(false);
+        setUserEmail(null);
+        router.push("/app/auth");
+      } catch (error) {
+        console.error("Logout failed:", error);
+      }
+    });
+  }
 
   function updateSetting<K extends keyof VoiceSettings>(key: K, value: VoiceSettings[K]) {
     if (!settings) return;
@@ -106,6 +147,52 @@ export function SettingsPanel() {
 
   return (
     <main className="mx-auto w-full max-w-4xl px-5 py-6 sm:px-8 lg:py-10">
+      {/* Account Section */}
+      <section className="mb-6 rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-2xl shadow-blush-200/40 backdrop-blur">
+        <div className="mb-4 flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blush-100">
+            <User aria-hidden="true" size={20} className="text-blush-600" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-blush-700">账号</p>
+            <h2 className="font-display text-2xl font-semibold tracking-normal text-ink-900">账户管理</h2>
+          </div>
+        </div>
+
+        {authLoading ? (
+          <div className="animate-pulse h-12 rounded-2xl bg-blush-50" />
+        ) : isAuthenticated ? (
+          <div className="flex items-center justify-between rounded-2xl bg-mint-50 p-4">
+            <div>
+              <p className="font-bold text-ink-900">已登录</p>
+              <p className="text-sm text-ink-600">{userEmail}</p>
+              <p className="mt-1 text-xs text-ink-400">你的数据已同步到云端</p>
+            </div>
+            <button
+              className="inline-flex items-center gap-2 rounded-full border border-blush-200 bg-white px-4 py-2 text-sm font-bold text-blush-700 transition hover:bg-blush-50"
+              onClick={handleLogout}
+              disabled={isPending}
+            >
+              <LogOut size={16} />
+              退出登录
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between rounded-2xl bg-blush-50 p-4">
+            <div>
+              <p className="font-bold text-ink-900">游客模式</p>
+              <p className="text-sm text-ink-600">创建账号以保存跨设备数据</p>
+            </div>
+            <Link
+              href="/app/auth"
+              className="inline-flex items-center gap-2 rounded-full bg-blush-500 px-5 py-2.5 font-bold text-white transition hover:bg-blush-600"
+            >
+              创建账号
+            </Link>
+          </div>
+        )}
+      </section>
+
       {/* Voice Settings Section */}
       <section className="mb-6 rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-2xl shadow-blush-200/40 backdrop-blur">
         <div className="mb-6 flex items-center gap-3">
