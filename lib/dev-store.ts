@@ -1215,6 +1215,9 @@ export async function finishDevSimulation(sessionId: string) {
       ? (run.coachAnalysisJson as Record<string, unknown>).summary as string | undefined
       : undefined;
 
+    // M6.2: Generate mock scene URL for dev mode
+    const mockSceneUrl = `/api/mock-character?theme=sunny_campus&crush=${session.crushId}&asset=scene&t=${Date.now()}`;
+
     const memory: DevMemory = {
       id: crypto.randomUUID(),
       crushId: session.crushId,
@@ -1224,6 +1227,7 @@ export async function finishDevSimulation(sessionId: string) {
       excerpt: summary ?? "完成了一次演练，为现实行动做好准备。",
       emotionTag: "encouraging",
       importanceLevel: 2,
+      imageUrl: mockSceneUrl,
       createdAt: session.updatedAt,
     };
     data.memories.push(memory);

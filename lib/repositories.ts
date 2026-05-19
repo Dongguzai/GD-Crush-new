@@ -2138,6 +2138,21 @@ export async function finishCurrentSimulation(sessionId: string) {
       ? (run.coachAnalysisJson as Record<string, unknown>).summary as string | undefined
       : undefined;
 
+    // M6.2: Generate scene for practice completion (async, non-blocking)
+    let sceneImageUrl: string | null = null;
+    try {
+      const visualProfile = await getCurrentVoiceProfile();
+      const theme = (visualProfile as { theme?: string } | null)?.theme ?? "sunny_campus";
+      const sceneAsset = await generateCurrentCrushSceneAsset({
+        theme: theme as VisualTheme,
+        sceneDescription: `浪漫温馨的虚拟约会场景，${completedChapter.title ?? "一次特别的演练"}后的美好时刻`,
+      });
+      sceneImageUrl = sceneAsset?.storageUrl ?? null;
+    } catch (error) {
+      // Scene generation is optional, don't fail the main flow
+      console.warn("[M6.2] Scene generation failed:", error);
+    }
+
     await db.insert(memories).values({
       crushId: active.id,
       sourceType: "practice_chapter",
@@ -2146,6 +2161,7 @@ export async function finishCurrentSimulation(sessionId: string) {
       excerpt: summary ?? "完成了一次演练，为现实行动做好准备。",
       emotionTag,
       importanceLevel: 2,
+      imageUrl: sceneImageUrl,
     });
   }
 

@@ -116,6 +116,17 @@ export default async function MemoriesPage() {
                             </div>
                           )}
 
+                          {/* Scene image (if available) */}
+                          {memory.imageUrl && (
+                            <div className="mb-3 -mx-5 -mt-5 overflow-hidden rounded-t-2xl">
+                              <img
+                                src={memory.imageUrl}
+                                alt={memory.title}
+                                className="h-36 w-full object-cover transition-transform group-hover:scale-105"
+                              />
+                            </div>
+                          )}
+
                           {/* Source type badge */}
                           <div className="mb-3 flex items-center gap-2">
                             <span className="rounded-full bg-blush-100 px-2 py-0.5 text-xs font-medium text-blush-700">
