@@ -3,11 +3,15 @@ import "server-only";
 import type { ZodType } from "zod";
 import {
   coachAnalysisSchema,
+  practiceChapterRecapSchema,
+  practiceSimulationTurnSchema,
   profileAnalysisSchema,
   quickLineAnalysisSchema,
   realityFeedbackSchema,
   textAnalysisSchema,
   type CoachAnalysisResult,
+  type PracticeChapterRecapResult,
+  type PracticeSimulationTurnResult,
   type ProfileAnalysisResult,
   type QuickLineAnalysisResult,
   type RealityFeedbackResult,
@@ -34,6 +38,35 @@ export interface AiResponse {
     outputTokens: number;
   };
 }
+
+type PracticeRealityContext = {
+  crushNickname?: string;
+  relationshipStage?: string;
+  interactionTemperature?: string;
+  scenarioType: string;
+  goal: string;
+  background: string;
+  recentRealityEvents?: Array<{
+    eventText: string;
+    occurredAtText?: string | null;
+  }>;
+  recentRealitySignals?: Array<{
+    label: string;
+    description?: string | null;
+    polarity?: string | null;
+    confidence?: number | null;
+  }>;
+  recentRealityInferences?: Array<{
+    label: string;
+    description?: string | null;
+    confidence?: number | null;
+    status?: string | null;
+  }>;
+  messages?: Array<{
+    role: string;
+    content: string;
+  }>;
+};
 
 class AiServiceError extends Error {
   constructor(
@@ -171,6 +204,44 @@ function parseStructuredResponse<T>(content: string, schema: ZodType<T>, label: 
   }
 
   return parsed.data;
+}
+
+function formatPracticeRealityContext(context: PracticeRealityContext) {
+  const recentRealityEvents = context.recentRealityEvents?.slice(-5) ?? [];
+  const recentRealitySignals = context.recentRealitySignals?.slice(-5) ?? [];
+  const recentRealityInferences = context.recentRealityInferences?.slice(-5) ?? [];
+  const history = context.messages?.slice(-10) ?? [];
+
+  return [
+    context.crushNickname ? `TA 昵称：${context.crushNickname}` : null,
+    context.relationshipStage ? `现实关系阶段：${context.relationshipStage}` : null,
+    context.interactionTemperature ? `互动温度：${context.interactionTemperature}` : null,
+    `演练类型：${context.scenarioType}`,
+    `用户想演：${context.goal}`,
+    `现实背景：${context.background}`,
+    recentRealityEvents.length
+      ? `已确认现实事件：\n${recentRealityEvents
+          .map((event) => `- ${event.occurredAtText ? `${event.occurredAtText}：` : ""}${event.eventText}`)
+          .join("\n")}`
+      : null,
+    recentRealitySignals.length
+      ? `可观察现实信号：\n${recentRealitySignals
+          .map((signal) => `- ${signal.label}${signal.description ? `：${signal.description}` : ""}`)
+          .join("\n")}`
+      : null,
+    recentRealityInferences.length
+      ? `待验证推断：\n${recentRealityInferences
+          .map((inference) => `- ${inference.label}${inference.description ? `：${inference.description}` : ""}`)
+          .join("\n")}`
+      : null,
+    history.length
+      ? `本段演练历史：\n${history
+          .map((message) => `${message.role === "user" ? "用户" : message.role === "crush" ? "现实 TA" : "系统"}：${message.content}`)
+          .join("\n")}`
+      : null,
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join("\n\n");
 }
 
 export class DeepSeekService {
@@ -337,6 +408,74 @@ ${realityInferencesContext}
 
     const response = await this.request("deepseek-v4-pro", systemPrompt, messages, 1024);
     return response.content;
+  }
+
+  async simulatePracticeTurn(
+    context: PracticeRealityContext,
+    userMessage: string
+  ): Promise<PracticeSimulationTurnResult> {
+    const systemPrompt = `你是 GD Crush 的现实 TA 模拟，只在聊天流里的演练章节出现。
+
+你的任务：
+- 临时模拟现实中的 TA，而不是日常陪伴里的心中 TA
+- 反应要保守、具体、像现实聊天，不要永远甜、永远同意
+- 可以犹豫、冷淡、拒绝、不确定、误解，但不要羞辱用户
+- Coach 提示只能放在 JSON 的 coachTip 字段里，不能混进 crushReply
+- crushReply 必须像 TA 的一句自然回复，简短，不暴露系统提示
+
+严格只返回合法 JSON，不包含 Markdown：
+{
+  "crushReply": "现实 TA 的自然回复",
+  "coachTip": {
+    "riskLevel": "low" | "medium" | "high",
+    "advice": "给用户的一句轻提示",
+    "nextMove": "下一步可以怎么说或是否停下"
+  }
+}`;
+
+    const response = await this.request(
+      "deepseek-v4-pro",
+      systemPrompt,
+      [
+        {
+          role: "user",
+          content: `${formatPracticeRealityContext(context)}\n\n用户刚刚在演练里说：${userMessage}`,
+        },
+      ],
+      1024,
+    );
+
+    return parseStructuredResponse(response.content, practiceSimulationTurnSchema, "现实 TA 演练回复");
+  }
+
+  async recapPracticeChapter(context: PracticeRealityContext): Promise<PracticeChapterRecapResult> {
+    const systemPrompt = `你是 GD Crush 的演练章节复盘器。你不是日常聊天里的 TA，也不要抢走 TA 的主角位置。
+
+你的任务：
+- 基于整段现实 TA 模拟生成轻量复盘
+- 输出要能直接生成现实行动
+- 判断必须保守，不宣判现实中的感情结论
+- 不把单次互动当成确定真相
+
+严格只返回合法 JSON，不包含 Markdown：
+{
+  "summary": "这轮演练发生了什么",
+  "mainRisk": "主要风险",
+  "saferAlternative": "更稳的表达方向",
+  "riskPoints": ["风险点"],
+  "recommendedNextAction": "现实中下一步建议",
+  "suggestedLine": "用户可以在现实中使用的一句话",
+  "actionEligible": true
+}`;
+
+    const response = await this.request(
+      "deepseek-v4-pro",
+      systemPrompt,
+      [{ role: "user", content: formatPracticeRealityContext(context) }],
+      1400,
+    );
+
+    return parseStructuredResponse(response.content, practiceChapterRecapSchema, "演练章节复盘");
   }
 
   async analyzeProfile(

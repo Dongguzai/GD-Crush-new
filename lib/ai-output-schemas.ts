@@ -93,6 +93,33 @@ export const coachAnalysisSchema = z
   })
   .strict();
 
+export const practiceCoachTipSchema = z
+  .object({
+    riskLevel: riskLevelSchema,
+    advice: z.string(),
+    nextMove: z.string(),
+  })
+  .strict();
+
+export const practiceSimulationTurnSchema = z
+  .object({
+    crushReply: z.string().min(1),
+    coachTip: practiceCoachTipSchema,
+  })
+  .strict();
+
+export const practiceChapterRecapSchema = z
+  .object({
+    summary: z.string(),
+    mainRisk: z.string(),
+    saferAlternative: z.string(),
+    riskPoints: z.array(z.string()),
+    recommendedNextAction: z.string(),
+    suggestedLine: z.string(),
+    actionEligible: z.boolean(),
+  })
+  .strict();
+
 export const visualTagsSchema = z
   .object({
     hairStyle: z.string(),
@@ -112,4 +139,7 @@ export type TextAnalysisResult = z.infer<typeof textAnalysisSchema>;
 export type QuickLineAnalysisResult = z.infer<typeof quickLineAnalysisSchema>;
 export type RealityFeedbackResult = z.infer<typeof realityFeedbackSchema>;
 export type CoachAnalysisResult = z.infer<typeof coachAnalysisSchema>;
+export type PracticeCoachTipResult = z.infer<typeof practiceCoachTipSchema>;
+export type PracticeSimulationTurnResult = z.infer<typeof practiceSimulationTurnSchema>;
+export type PracticeChapterRecapResult = z.infer<typeof practiceChapterRecapSchema>;
 export type VisualTagsResult = z.infer<typeof visualTagsSchema>;

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { handleApiError, unauthorizedResponse } from "@/lib/errors";
-import { getCurrentUserId, getOrCreateUserSettings, updateUserSettings } from "@/lib/repositories";
+import { getCurrentUserId } from "@/lib/auth";
+import { handleApiError, UnauthorizedError } from "@/lib/errors";
+import { getOrCreateUserSettings, updateUserSettings } from "@/lib/repositories";
 
 const updateSchema = z.object({
   autoPlayCompanionVoice: z.boolean().optional(),
@@ -14,7 +15,7 @@ export async function GET() {
   try {
     const userId = await getCurrentUserId();
     if (!userId) {
-      return unauthorizedResponse();
+      throw new UnauthorizedError();
     }
 
     const settings = await getOrCreateUserSettings(userId);
@@ -28,7 +29,7 @@ export async function PATCH(request: Request) {
   try {
     const userId = await getCurrentUserId();
     if (!userId) {
-      return unauthorizedResponse();
+      throw new UnauthorizedError();
     }
 
     const body = await request.json().catch(() => null);

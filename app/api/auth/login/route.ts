@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { loginUser, getCurrentUserId, migrateAnonymousToAuthenticated } from "@/lib/auth";
+import { loginUser } from "@/lib/auth";
 import { handleApiError } from "@/lib/errors";
 
 const loginSchema = z.object({
@@ -15,15 +15,12 @@ export async function POST(request: Request) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        { error: parsed.error.errors[0]?.message ?? "Invalid input" },
+        { error: parsed.error.issues[0]?.message ?? "Invalid input" },
         { status: 400 }
       );
     }
 
     const { email, password } = parsed.data;
-
-    // Get current anonymous user (for migration)
-    const anonymousUserId = await getCurrentUserId();
 
     const result = await loginUser(email, password);
 

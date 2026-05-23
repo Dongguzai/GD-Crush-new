@@ -34,7 +34,8 @@ type EventAction =
   | "received"
   | "created"
   | "updated"
-  | "deleted";
+  | "deleted"
+  | "viewed";
 
 interface AnalyticsEvent {
   category: EventCategory;
@@ -104,7 +105,10 @@ export function trackEvent(
     category,
     action,
     label: options?.label,
-    metadata: options?.metadata,
+    metadata: {
+      sessionId: getAnonymousSessionId(),
+      ...options?.metadata,
+    },
     timestamp: Date.now(),
   };
 
@@ -215,12 +219,16 @@ export function trackAiMetrics(
   operation: string,
   metrics: AiMetrics
 ): void {
+  const metadata: Record<string, string | number | boolean> = {
+    latencyMs: metrics.latencyMs,
+    tokens: metrics.tokens ?? 0,
+  };
+  if (metrics.errorType) {
+    metadata.errorType = metrics.errorType;
+  }
+
   trackEvent("system", metrics.success ? "completed" : "failed", {
     label: operation,
-    metadata: {
-      latencyMs: metrics.latencyMs,
-      errorType: metrics.errorType,
-      tokens: metrics.tokens ?? 0,
-    },
+    metadata,
   });
 }

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { badRequestResponse, handleApiError } from "@/lib/errors";
-import { getTtsService } from "@/lib/tts-service";
 
 const requestSchema = z.object({
   text: z.string().min(1).max(200),
@@ -9,20 +8,6 @@ const requestSchema = z.object({
   emotionLevel: z.enum(["restrained", "natural", "sweet"]).optional().default("natural"),
   ageStyle: z.enum(["young", "mature"]).optional().default("young"),
 });
-
-// Map settings to speech rate adjustment
-function mapSpeedToSpeechRate(speed: string): number {
-  switch (speed) {
-    case "slow":
-      return -25;
-    case "normal":
-      return -10;
-    case "fast":
-      return 5;
-    default:
-      return -10;
-  }
-}
 
 export async function POST(request: Request) {
   try {

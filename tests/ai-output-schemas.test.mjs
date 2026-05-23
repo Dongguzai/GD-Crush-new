@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   coachAnalysisSchema,
+  practiceChapterRecapSchema,
+  practiceSimulationTurnSchema,
   profileAnalysisSchema,
   quickLineAnalysisSchema,
   realityFeedbackSchema,
@@ -93,6 +95,29 @@ test("coach analysis rejects wrong field types", () => {
     analysis: ["too direct"],
     suggestedReply: "可以慢一点说",
     emotionalSupport: "先照顾好自己的节奏",
+  });
+
+  assert.equal(result.success, false);
+});
+
+test("practice simulation turn accepts the reality TA contract", () => {
+  const result = practiceSimulationTurnSchema.safeParse({
+    crushReply: "我听到了，不过我可能需要一点时间想想。",
+    coachTip: {
+      riskLevel: "low",
+      advice: "继续保持轻量。",
+      nextMove: "先停在这里，观察对方是否接话。",
+    },
+  });
+
+  assert.equal(result.success, true);
+});
+
+test("practice recap rejects missing action fields", () => {
+  const result = practiceChapterRecapSchema.safeParse({
+    summary: "表达比较克制。",
+    riskPoints: ["不要连续追问。"],
+    recommendedNextAction: "等对方自然回应。",
   });
 
   assert.equal(result.success, false);

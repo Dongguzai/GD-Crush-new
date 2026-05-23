@@ -246,7 +246,7 @@ Acceptance:
 
 ### [P0] M3.2 Build inline practice chapter UI
 
-Status: Partially implemented in Batch 2; persistence linkage added in Batch 3
+Status: Implemented on 2026-05-23
 
 Dependencies: M3.1
 
@@ -263,6 +263,7 @@ Scope:
   - `提示一下`
   - `重来这句`
   - `结束演练`
+- `重来这句` rewinds the last persisted practice turn and restores the user's previous line in the composer.
 
 Acceptance:
 
@@ -272,6 +273,8 @@ Acceptance:
 
 ### [P0] M3.3 Separate 心中 TA and 现实 TA behavior
 
+Status: Implemented on 2026-05-23
+
 Dependencies: M3.1, M1.4
 
 Scope:
@@ -279,6 +282,7 @@ Scope:
 - Define and implement separate prompt contracts for:
   - daily chat as 心中 TA
   - practice chapters as 现实 TA 模拟
+- Practice turns now use a validated structured AI contract before persistence, with local fallback for development.
 - Ensure practice replies can be:
   - hesitant
   - cool
@@ -294,7 +298,7 @@ Acceptance:
 
 ### [P0] M3.4 Make hints user-triggered and lightweight
 
-Status: Partially implemented in Batch 2
+Status: Implemented on 2026-05-23
 
 Dependencies: M3.2, M3.3
 
@@ -303,6 +307,7 @@ Scope:
 - Replace always-on coach inserts with explicit hint requests.
 - Define a compact structured hint schema.
 - Render hints as auxiliary UI, not as a competing speaker in the thread.
+- Hints are stored as metadata and rendered inside a collapsed `提示一下` disclosure.
 
 Acceptance:
 
@@ -311,7 +316,7 @@ Acceptance:
 
 ### [P0] M3.5 Make recap output reusable
 
-Status: Partially implemented in Batch 2
+Status: Implemented on 2026-05-23
 
 Dependencies: M3.2, M3.4
 
@@ -324,6 +329,7 @@ Scope:
   - recommended next step
   - action-generation eligibility
 - Ensure recap cards can generate real actions directly.
+- Recaps now come from a validated structured AI contract and preserve suggested action text separately.
 
 Acceptance:
 
@@ -372,15 +378,15 @@ Acceptance:
 
 ### [P0] M4.2 Introduce `reality_events`, `reality_signals`, and `reality_inferences`
 
-Status: Partially implemented in Batch 4 (`reality_events` foundation only)
+Status: Implemented on 2026-05-23
 
 Dependencies: M4.1, M1.1
 
 Scope:
 
 - Add the new reality-layer entities from the PRD.
-- Current implementation adds durable `reality_events` capture and profile/chat exposure.
-- `reality_signals` and `reality_inferences` remain pending so observed facts do not become overconfident interpretations too early.
+- Current implementation adds durable `reality_events`, `reality_signals`, and `reality_inferences`.
+- Chat-side `记一下` remains fact-only by design; action feedback creates linked signals and pending inferences where evidence is stronger.
 - Preserve a strict distinction between:
   - observed fact
   - extracted signal
@@ -480,6 +486,8 @@ Acceptance:
 - Users can trace how an action was born and what happened after.
 
 ### [P1] M5.2 Rework memories around emotionally meaningful moments
+
+Status: Implemented on 2026-05-23
 
 Dependencies: M3.6, M5.1
 

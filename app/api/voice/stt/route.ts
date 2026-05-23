@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getCurrentUserId } from "@/lib/auth";
+import { getOrCreateUserId } from "@/lib/auth";
 import { deleteStoredObjectWithRetry } from "@/lib/asset-lifecycle";
 import { BadRequestError, handleApiError, ServiceUnavailableError } from "@/lib/errors";
 import { getStorageService } from "@/lib/storage-service";
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     }
 
     audioObjectKey = parsed.data.audioObjectKey;
-    const userId = await getCurrentUserId();
+    const userId = await getOrCreateUserId();
     const result = await getSttService().transcribe({
       audioObjectKey,
       userId,

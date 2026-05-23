@@ -11,11 +11,17 @@ import { setTimeout as delay } from "node:timers/promises";
 const repoRoot = process.cwd();
 const devStoreFileName = `integration-${randomUUID()}.json`;
 const devStorePath = join(repoRoot, ".data", devStoreFileName);
+const nextDistDir = `.next-integration-${randomUUID()}`;
+const nextDistPath = join(repoRoot, nextDistDir);
+const nextEnvPath = join(repoRoot, "next-env.d.ts");
+const tsconfigPath = join(repoRoot, "tsconfig.json");
 let appBaseUrl = "";
 let appProcess;
 let fakeAiServer;
 let fakeAiMode = "valid";
 let lastCompanionSystemPrompt = "";
+let originalNextEnv = "";
+let originalTsconfig = "";
 
 async function findFreePort() {
   return new Promise((resolve, reject) => {
@@ -79,7 +85,26 @@ function startFakeAiServer(port) {
       lastCompanionSystemPrompt = systemPrompt;
     }
 
-    if (systemPrompt.includes("一句话风险评估")) {
+    if (systemPrompt.includes("演练章节复盘器")) {
+      text = JSON.stringify({
+        summary: "你完成了一轮克制表达，没有把压力推给对方。",
+        mainRisk: "后续如果连续追问，容易让对方感到必须表态。",
+        saferAlternative: "保留邀约意图，同时给对方选择空间。",
+        riskPoints: ["后续不要连续追问结果。"],
+        recommendedNextAction: "等待对方自然回应，至少间隔半天。",
+        suggestedLine: "刚刚那件事我想清楚了，不急着让你马上回应，只是想把我的意思说清楚。",
+        actionEligible: true,
+      });
+    } else if (systemPrompt.includes("现实 TA 模拟")) {
+      text = JSON.stringify({
+        crushReply: "我听到了，不过我可能需要一点时间想想。",
+        coachTip: {
+          riskLevel: "low",
+          advice: "继续保持轻量，不要急着要求对方表态。",
+          nextMove: "观察对方是否主动延续话题。",
+        },
+      });
+    } else if (systemPrompt.includes("一句话风险评估")) {
       text =
         fakeAiMode === "malformed-quick-line"
           ? JSON.stringify({
@@ -206,6 +231,7 @@ async function startAppServer(port, fakeAiPort) {
       R2_BUCKET_NAME: "",
       R2_PUBLIC_BASE_URL: "",
       DEV_STORE_FILE_NAME: devStoreFileName,
+      NEXT_DIST_DIR: nextDistDir,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -304,6 +330,10 @@ async function createDraft(userId) {
 
 test.before(async () => {
   const [appPort, fakeAiPort] = await Promise.all([findFreePort(), findFreePort()]);
+  [originalNextEnv, originalTsconfig] = await Promise.all([
+    readFile(nextEnvPath, "utf8"),
+    readFile(tsconfigPath, "utf8"),
+  ]);
   await startFakeAiServer(fakeAiPort);
   await startAppServer(appPort, fakeAiPort);
 });
@@ -319,6 +349,13 @@ test.after(async () => {
     await new Promise((resolve) => fakeAiServer.close(resolve));
   }
   await rm(devStorePath, { force: true });
+  await rm(nextDistPath, { force: true, recursive: true });
+  if (originalNextEnv) {
+    await writeFile(nextEnvPath, originalNextEnv);
+  }
+  if (originalTsconfig) {
+    await writeFile(tsconfigPath, originalTsconfig);
+  }
 });
 
 test("golden path: onboarding to destroy completes end-to-end", async () => {
@@ -540,6 +577,32 @@ test("practice chapters persist inside companion chat and can seed actions", asy
     body: {
       sessionId,
       message: "我周末可能会去那个展，你要不要一起？",
+    },
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.crushReply, "我听到了，不过我可能需要一点时间想想。");
+
+  result = await jsonRequest("/api/practice/full-simulation/retry-last", {
+    method: "POST",
+    userId,
+    body: { sessionId },
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.restoredText, "我周末可能会去那个展，你要不要一起？");
+
+  result = await jsonRequest("/api/chat/companion", {
+    method: "GET",
+    userId,
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.practiceChapters[0].messages.length, 0);
+
+  result = await jsonRequest("/api/practice/full-simulation/message", {
+    method: "POST",
+    userId,
+    body: {
+      sessionId,
+      message: "我周末可能会去那个展，你有兴趣的话可以一起看看。",
     },
   });
   assert.equal(result.response.status, 200);

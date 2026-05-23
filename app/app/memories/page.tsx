@@ -1,4 +1,5 @@
 import { getCurrentMemories } from "@/lib/repositories";
+import Image from "next/image";
 import Link from "next/link";
 import { Heart, Sparkles, Target, Star } from "lucide-react";
 
@@ -35,9 +36,10 @@ function formatDate(dateStr: string) {
 
 export default async function MemoriesPage() {
   const memories = await getCurrentMemories();
+  type Memory = (typeof memories)[number];
 
   // Group memories by source type
-  const groupedMemories = memories.reduce<Record<string, typeof memories>>((acc, memory) => {
+  const groupedMemories = memories.reduce<Record<string, Memory[]>>((acc, memory) => {
     const sourceType = memory.sourceType || "other";
     if (!acc[sourceType]) {
       acc[sourceType] = [];
@@ -119,9 +121,12 @@ export default async function MemoriesPage() {
                           {/* Scene image (if available) */}
                           {memory.imageUrl && (
                             <div className="mb-3 -mx-5 -mt-5 overflow-hidden rounded-t-2xl">
-                              <img
+                              <Image
                                 src={memory.imageUrl}
                                 alt={memory.title}
+                                width={640}
+                                height={360}
+                                unoptimized
                                 className="h-36 w-full object-cover transition-transform group-hover:scale-105"
                               />
                             </div>

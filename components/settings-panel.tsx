@@ -3,7 +3,7 @@
 import { useState, useEffect, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Trash2, Volume2, Play, Check, User, LogOut } from "lucide-react";
+import { Trash2, Volume2, Play, User, LogOut } from "lucide-react";
 
 type VoiceSettings = {
   autoPlayCompanionVoice: boolean;

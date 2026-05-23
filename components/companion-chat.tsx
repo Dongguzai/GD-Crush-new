@@ -32,8 +32,11 @@ type PracticeThreadMessage = {
 
 type PracticeSummary = {
   summary?: string;
+  mainRisk?: string;
+  saferAlternative?: string;
   riskPoints?: string[];
   recommendedNextAction?: string;
+  actionEligible?: boolean;
 };
 
 type SuggestedPracticeAction = {
@@ -549,6 +552,46 @@ export function CompanionChat() {
     });
   }
 
+  function retryLastPracticeLine() {
+    const sessionId = practiceChapter?.sessionId;
+    const lastUserMessage = practiceChapter?.messages.findLast((message) => message.role === "user");
+    if (!sessionId || !lastUserMessage) return;
+
+    setChatNotice(null);
+    setPracticeBusyLabel("正在撤回上一轮演练...");
+    startTransition(async () => {
+      try {
+        await readApiResponse(
+          await fetch("/api/practice/full-simulation/retry-last", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId }),
+          }),
+          "上一句还没撤回，请稍后重试。",
+        );
+        setPracticeChapter((current) => {
+          if (!current) return current;
+          const lastUserIndex = current.messages.findLastIndex((message) => message.role === "user");
+          return {
+            ...current,
+            messages: lastUserIndex >= 0 ? current.messages.slice(0, lastUserIndex) : current.messages,
+            coachTips: current.coachTips.slice(0, Math.max(0, current.coachTips.length - 1)),
+          };
+        });
+        setText(lastUserMessage.content);
+      } catch (error) {
+        setChatNotice({
+          tone: "error",
+          title: "上一句还没撤回",
+          description: getClientErrorMessage(error, "上一句还没撤回，请稍后重试。"),
+          retry: retryLastPracticeLine,
+        });
+      } finally {
+        setPracticeBusyLabel(null);
+      }
+    });
+  }
+
   function savePracticeAction() {
     const suggestedAction = practiceChapter?.suggestedAction;
     if (!suggestedAction) return;
@@ -909,6 +952,7 @@ export function CompanionChat() {
               isPending={isPending}
               onCancel={() => setPracticeChapter(null)}
               onFinish={finishPracticeChapter}
+              onRetryLast={retryLastPracticeLine}
               onReset={() => setPracticeChapter(createPracticeChapter())}
               onSaveAction={savePracticeAction}
               onStart={startPracticeChapter}
@@ -977,6 +1021,7 @@ function PracticeChapterPanel({
   isPending,
   onCancel,
   onFinish,
+  onRetryLast,
   onReset,
   onSaveAction,
   onStart,
@@ -988,6 +1033,7 @@ function PracticeChapterPanel({
   isPending: boolean;
   onCancel: () => void;
   onFinish: () => void;
+  onRetryLast: () => void;
   onReset: () => void;
   onSaveAction: () => void;
   onStart: () => void;
@@ -1104,6 +1150,14 @@ function PracticeChapterPanel({
           </div>
           <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
             <button
+              className="inline-flex min-h-11 items-center justify-center rounded-full bg-white/10 px-5 font-bold text-white transition hover:bg-white/15 disabled:opacity-60"
+              disabled={isPending || !chapter.messages.some((message) => message.role === "user")}
+              type="button"
+              onClick={onRetryLast}
+            >
+              重来这句
+            </button>
+            <button
               className="inline-flex min-h-11 items-center justify-center rounded-full bg-white px-5 font-black text-ink-900 transition hover:bg-blush-50 disabled:opacity-60"
               disabled={isPending || !chapter.messages.length}
               type="button"
@@ -1123,6 +1177,16 @@ function PracticeChapterPanel({
             <p className="mt-2 font-black text-ink-900">
               {chapter.summary?.summary ?? "你已经完成了一轮现实表达预演。"}
             </p>
+            {chapter.summary?.mainRisk ? (
+              <p className="mt-3 rounded-2xl bg-rose-50 p-3 font-bold text-rose-700">
+                主要风险：{chapter.summary.mainRisk}
+              </p>
+            ) : null}
+            {chapter.summary?.saferAlternative ? (
+              <p className="mt-3 rounded-2xl bg-mint-100/60 p-3 font-bold text-ink-800">
+                更稳方向：{chapter.summary.saferAlternative}
+              </p>
+            ) : null}
             {chapter.summary?.riskPoints?.length ? (
               <ul className="mt-2 list-disc space-y-1 pl-5">
                 {chapter.summary.riskPoints.map((point) => (

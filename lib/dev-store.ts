@@ -1132,7 +1132,18 @@ export async function startDevSimulation(input: {
   return { ...session, chapter };
 }
 
-export async function addDevSimulationTurn(sessionId: string, message: string) {
+export async function addDevSimulationTurn(
+  sessionId: string,
+  message: string,
+  turn?: {
+    crushReply: string;
+    coachTip: {
+      riskLevel: string;
+      advice: string;
+      nextMove: string;
+    };
+  },
+) {
   const data = await readStore();
   const session = data.chatSessions.find((item) => item.id === sessionId);
   if (!session) {
@@ -1146,10 +1157,10 @@ export async function addDevSimulationTurn(sessionId: string, message: string) {
     content: message,
     createdAt,
   };
-  const crushReply = message.includes("抱歉")
+  const crushReply = turn?.crushReply ?? (message.includes("抱歉")
     ? "没事啦，只是当时有点突然。你这样说我会比较好理解。"
-    : "我听到了，不过我可能需要一点时间想想。";
-  const coachTip = {
+    : "我听到了，不过我可能需要一点时间想想。");
+  const coachTip = turn?.coachTip ?? {
     riskLevel: message.includes("必须") ? "high" : "low",
     advice: message.includes("抱歉") ? "表达清楚且不过度解释，可以停在这里给对方空间。" : "继续保持轻量，不要急着要求对方表态。",
     nextMove: "观察对方是否主动延续话题。",
@@ -1176,7 +1187,49 @@ export async function addDevSimulationTurn(sessionId: string, message: string) {
   return { crushReply, coachTip, userMessage, crushMessage, coachMessage };
 }
 
-export async function finishDevSimulation(sessionId: string) {
+export async function removeDevSimulationLastTurn(sessionId: string) {
+  const data = await readStore();
+  const session = data.chatSessions.find((item) => item.id === sessionId);
+  if (!session || session.status !== "active") {
+    return null;
+  }
+
+  const sessionMessages = data.messages
+    .filter((message) => message.sessionId === sessionId)
+    .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
+  const lastUserMessage = [...sessionMessages].reverse().find((message) => message.role === "user");
+  if (!lastUserMessage) {
+    return null;
+  }
+
+  const removedIds = new Set(
+    sessionMessages
+      .filter(
+        (message) =>
+          message.createdAt === lastUserMessage.createdAt &&
+          ["user", "crush", "coach"].includes(message.role),
+      )
+      .map((message) => message.id),
+  );
+  data.messages = data.messages.filter((message) => !removedIds.has(message.id));
+  session.updatedAt = now();
+  await writeStore(data);
+
+  return {
+    removedMessageIds: [...removedIds],
+    restoredText: lastUserMessage.content,
+  };
+}
+
+export async function finishDevSimulation(
+  sessionId: string,
+  payload?: {
+    riskLevel: string;
+    simulatedReply?: string | null;
+    suggestedLine?: string | null;
+    coachAnalysisJson: Record<string, unknown>;
+  },
+) {
   const data = await readStore();
   const session = data.chatSessions.find((item) => item.id === sessionId);
   if (!session) {
@@ -1190,10 +1243,10 @@ export async function finishDevSimulation(sessionId: string) {
     sessionId,
     practiceType: "full_simulation",
     scenarioType: session.scenarioType ?? "conversation",
-    riskLevel: "low",
-    simulatedReply: "整体反馈较温和，但仍建议给对方空间。",
-    suggestedLine: "刚刚那件事我想清楚了，不急着让你马上回应，只是想把我的意思说清楚。",
-    coachAnalysisJson: {
+    riskLevel: payload?.riskLevel ?? "low",
+    simulatedReply: payload?.simulatedReply ?? "整体反馈较温和，但仍建议给对方空间。",
+    suggestedLine: payload?.suggestedLine ?? "刚刚那件事我想清楚了，不急着让你马上回应，只是想把我的意思说清楚。",
+    coachAnalysisJson: payload?.coachAnalysisJson ?? {
       summary: "你完成了一轮克制表达，没有把压力推给对方。",
       riskPoints: ["后续不要连续追问结果。"],
       recommendedNextAction: "等待对方自然回应，至少间隔半天。",

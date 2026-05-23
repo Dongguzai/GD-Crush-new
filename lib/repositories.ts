@@ -1,7 +1,7 @@
 import "server-only";
 
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { getCurrentUserId } from "@/lib/auth";
+import { getCurrentUserId, getOrCreateUserId } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
   addDevMaterial,
@@ -45,6 +45,7 @@ import {
   getOrCreateDevVoiceProfile,
   isDevCrushOwnedByUser,
   markDevReferenceImageDeleted,
+  removeDevSimulationLastTurn,
   resolveDevSuggestion,
   startDevSimulation,
   updateDevAction,
@@ -81,7 +82,11 @@ import {
   getImageGenerationService,
   type GeneratedVisualAssetInput,
 } from "@/lib/image-generation-service";
-import type { QuickLineAnalysisResult } from "@/lib/ai-output-schemas";
+import type {
+  PracticeChapterRecapResult,
+  PracticeSimulationTurnResult,
+  QuickLineAnalysisResult,
+} from "@/lib/ai-output-schemas";
 import { getStorageService } from "@/lib/storage-service";
 import { getTtsService } from "@/lib/tts-service";
 import { BadRequestError, ServiceUnavailableError } from "@/lib/errors";
@@ -111,8 +116,11 @@ type QuickPracticeAnalysis = QuickLineAnalysisResult;
 
 type PracticeChapterSummary = {
   summary?: string;
+  mainRisk?: string;
+  saferAlternative?: string;
   riskPoints?: string[];
   recommendedNextAction?: string;
+  actionEligible?: boolean;
 };
 
 type PracticeChapterMessage = {
@@ -205,11 +213,14 @@ function asSummary(value: unknown): PracticeChapterSummary | null {
 
   return {
     summary: typeof record.summary === "string" ? record.summary : undefined,
+    mainRisk: typeof record.mainRisk === "string" ? record.mainRisk : undefined,
+    saferAlternative: typeof record.saferAlternative === "string" ? record.saferAlternative : undefined,
     riskPoints: Array.isArray(record.riskPoints)
       ? record.riskPoints.filter((item): item is string => typeof item === "string")
       : undefined,
     recommendedNextAction:
       typeof record.recommendedNextAction === "string" ? record.recommendedNextAction : undefined,
+    actionEligible: typeof record.actionEligible === "boolean" ? record.actionEligible : undefined,
   };
 }
 
@@ -533,12 +544,13 @@ function buildQuickPracticePayload(
   };
 }
 
-function buildSimulationReply(message: string) {
+function buildSimulationReply(message: string): PracticeSimulationTurnResult {
   const crushReply = message.includes("抱歉")
     ? "没事啦，只是当时有点突然。你这样说我会比较好理解。"
     : "我听到了，不过我可能需要一点时间想想。";
+  const riskLevel: "high" | "low" = message.includes("必须") ? "high" : "low";
   const coachTip = {
-    riskLevel: message.includes("必须") ? "high" : "low",
+    riskLevel,
     advice: message.includes("抱歉") ? "表达清楚且不过度解释，可以停在这里给对方空间。" : "继续保持轻量，不要急着要求对方表态。",
     nextMove: "观察对方是否主动延续话题。",
   };
@@ -546,11 +558,34 @@ function buildSimulationReply(message: string) {
   return { crushReply, coachTip };
 }
 
-function buildFinishedSimulationPayload(session: {
-  crushId: string;
-  id: string;
-  scenarioType?: string | null;
-}) {
+function buildFinishedSimulationPayload(
+  session: {
+    crushId: string;
+    id: string;
+    scenarioType?: string | null;
+  },
+  recap?: PracticeChapterRecapResult | null,
+) {
+  if (recap) {
+    return {
+      crushId: session.crushId,
+      sessionId: session.id,
+      practiceType: "full_simulation",
+      scenarioType: session.scenarioType ?? "conversation",
+      riskLevel: recap.actionEligible ? "low" : "medium",
+      simulatedReply: recap.summary,
+      suggestedLine: recap.suggestedLine,
+      coachAnalysisJson: {
+        summary: recap.summary,
+        mainRisk: recap.mainRisk,
+        saferAlternative: recap.saferAlternative,
+        riskPoints: recap.riskPoints,
+        recommendedNextAction: recap.recommendedNextAction,
+        actionEligible: recap.actionEligible,
+      },
+    };
+  }
+
   return {
     crushId: session.crushId,
     sessionId: session.id,
@@ -565,6 +600,110 @@ function buildFinishedSimulationPayload(session: {
       recommendedNextAction: "等待对方自然回应，至少间隔半天。",
     },
   };
+}
+
+type PracticeAiSession = {
+  id: string;
+  crushId: string;
+  title?: string | null;
+  scenarioType?: string | null;
+};
+
+async function getPracticeChapterForSession(session: PracticeAiSession) {
+  if (!hasDatabaseUrl()) {
+    const chapters = await getDevPracticeChaptersForCrush(session.crushId);
+    return chapters.find((chapter) => chapter.practiceSessionId === session.id) ?? null;
+  }
+
+  const [chapter] = await getDb()
+    .select()
+    .from(practiceChapters)
+    .where(eq(practiceChapters.practiceSessionId, session.id))
+    .limit(1);
+  return chapter ?? null;
+}
+
+async function getPracticeMessagesForSession(sessionId: string) {
+  if (!hasDatabaseUrl()) {
+    return getDevMessages(sessionId);
+  }
+
+  return getDb()
+    .select()
+    .from(messages)
+    .where(eq(messages.sessionId, sessionId))
+    .orderBy(asc(messages.createdAt));
+}
+
+async function buildPracticeAiContext(session: PracticeAiSession) {
+  const [{ profile: active }, chapter, sessionMessages, realityLayer] = await Promise.all([
+    getCurrentUserActiveCrush(),
+    getPracticeChapterForSession(session),
+    getPracticeMessagesForSession(session.id),
+    getCurrentRealityLayer(session.crushId),
+  ]);
+  const realityContext = asRecord(chapter?.realityContextJson);
+  const background = getBackgroundFromContext(realityContext) || session.title || "用户想先演一遍现实中的表达。";
+
+  return {
+    crushNickname: active?.nickname,
+    relationshipStage: active?.realRelationshipStage,
+    interactionTemperature: active?.interactionTemperature,
+    scenarioType: chapter?.scenarioType ?? session.scenarioType ?? "conversation",
+    goal: chapter?.title ?? session.title ?? "把想说的话先演一遍",
+    background,
+    recentRealityEvents: realityLayer.realityEvents.slice(-5),
+    recentRealitySignals: realityLayer.realitySignals.slice(-5),
+    recentRealityInferences: realityLayer.realityInferences.slice(-5),
+    messages: sessionMessages.map((message) => ({
+      role: message.role,
+      content: message.content,
+    })),
+  };
+}
+
+async function generatePracticeTurn(session: PracticeAiSession, message: string): Promise<PracticeSimulationTurnResult> {
+  const startedAt = Date.now();
+
+  try {
+    const { getDeepSeekService } = await import("@/lib/ai-service");
+    const result = await getDeepSeekService().simulatePracticeTurn(await buildPracticeAiContext(session), message);
+    trackAiMetrics("practice_simulation_turn", {
+      latencyMs: Date.now() - startedAt,
+      success: true,
+    });
+    return result;
+  } catch (error) {
+    trackAiMetrics("practice_simulation_turn", {
+      latencyMs: Date.now() - startedAt,
+      success: false,
+      errorType: error instanceof Error ? error.name : "unknown",
+    });
+    console.warn("[AI] Practice simulation turn failed, falling back to local reply", error);
+    return buildSimulationReply(message);
+  }
+}
+
+async function generatePracticeRecap(session: PracticeAiSession): Promise<PracticeChapterRecapResult | null> {
+  const startedAt = Date.now();
+
+  try {
+    const { getDeepSeekService } = await import("@/lib/ai-service");
+    const result = await getDeepSeekService().recapPracticeChapter(await buildPracticeAiContext(session));
+    trackAiMetrics("practice_chapter_recap", {
+      latencyMs: Date.now() - startedAt,
+      success: true,
+    });
+    return result;
+  } catch (error) {
+    trackAiMetrics("practice_chapter_recap", {
+      latencyMs: Date.now() - startedAt,
+      success: false,
+      errorType: error instanceof Error ? error.name : "unknown",
+    });
+    console.warn("[AI] Practice recap failed, falling back to local recap", error);
+    return null;
+  }
 }
 
 function buildVoiceDefaults(theme: string) {
@@ -756,6 +895,9 @@ async function getDbMessagesForCrush(crushId: string) {
 
 async function isCurrentUserOwnedCrush(crushId: string) {
   const userId = await getCurrentUserId();
+  if (!userId) {
+    return false;
+  }
 
   if (!hasDatabaseUrl()) {
     return isDevCrushOwnedByUser(userId, crushId);
@@ -879,7 +1021,7 @@ async function isCurrentOwnedMemorySource(sourceId: string) {
 }
 
 export async function confirmCurrentUserAge() {
-  const userId = await getCurrentUserId();
+  const userId = await getOrCreateUserId();
 
   if (!hasDatabaseUrl()) {
     return confirmDevUserAge(userId);
@@ -907,7 +1049,7 @@ export async function createCurrentUserCrush(input: {
   userGoal?: string | null;
   userAnxiety?: string | null;
 }) {
-  const userId = await getCurrentUserId();
+  const userId = await getOrCreateUserId();
 
   if (!hasDatabaseUrl()) {
     return createDevCrush(userId, input);
@@ -941,6 +1083,9 @@ export async function createCurrentUserCrush(input: {
 
 export async function getCurrentUserActiveCrush() {
   const userId = await getCurrentUserId();
+  if (!userId) {
+    return { profile: null, metrics: null };
+  }
 
   if (!hasDatabaseUrl()) {
     const profile = await getActiveDevCrush(userId);
@@ -2040,14 +2185,15 @@ export async function sendCurrentSimulationMessage(sessionId: string, message: s
   }
 
   if (!hasDatabaseUrl()) {
-    return addDevSimulationTurn(sessionId, message);
+    const turn = await generatePracticeTurn(ownedSession, message);
+    return addDevSimulationTurn(sessionId, message, turn);
   }
 
   const db = getDb();
   const session = ownedSession as typeof chatSessions.$inferSelect;
 
   const createdAt = new Date();
-  const { crushReply, coachTip } = buildSimulationReply(message);
+  const { crushReply, coachTip } = await generatePracticeTurn(session, message);
   const inserted = await db
     .insert(messages)
     .values([
@@ -2079,6 +2225,48 @@ export async function sendCurrentSimulationMessage(sessionId: string, message: s
   return { crushReply, coachTip, userMessage, crushMessage, coachMessage };
 }
 
+export async function retryCurrentSimulationLastTurn(sessionId: string) {
+  const ownedSession = await getCurrentOwnedSessionById(sessionId);
+  if (!ownedSession || ownedSession.status !== "active") {
+    return null;
+  }
+
+  if (!hasDatabaseUrl()) {
+    return removeDevSimulationLastTurn(sessionId);
+  }
+
+  const db = getDb();
+  const sessionMessages = await db
+    .select()
+    .from(messages)
+    .where(eq(messages.sessionId, sessionId))
+    .orderBy(asc(messages.createdAt));
+  const lastUserMessage = [...sessionMessages].reverse().find((message) => message.role === "user");
+  if (!lastUserMessage) {
+    return null;
+  }
+
+  const turnCreatedAt = new Date(lastUserMessage.createdAt).getTime();
+  const removedIds = sessionMessages
+    .filter(
+      (message) =>
+        new Date(message.createdAt).getTime() === turnCreatedAt &&
+        ["user", "crush", "coach"].includes(message.role),
+    )
+    .map((message) => message.id);
+  if (!removedIds.length) {
+    return null;
+  }
+
+  await db.delete(messages).where(inArray(messages.id, removedIds));
+  await db.update(chatSessions).set({ updatedAt: new Date() }).where(eq(chatSessions.id, sessionId));
+
+  return {
+    removedMessageIds: removedIds,
+    restoredText: lastUserMessage.content,
+  };
+}
+
 export async function finishCurrentSimulation(sessionId: string) {
   const ownedSession = await getCurrentOwnedSessionById(sessionId);
   if (!ownedSession) {
@@ -2086,13 +2274,15 @@ export async function finishCurrentSimulation(sessionId: string) {
   }
 
   if (!hasDatabaseUrl()) {
-    return finishDevSimulation(sessionId);
+    const recap = await generatePracticeRecap(ownedSession);
+    return finishDevSimulation(sessionId, buildFinishedSimulationPayload(ownedSession, recap));
   }
 
   const db = getDb();
   const session = ownedSession as typeof chatSessions.$inferSelect;
 
   const now = new Date();
+  const recap = await generatePracticeRecap(session);
   await db
     .update(chatSessions)
     .set({
@@ -2103,7 +2293,7 @@ export async function finishCurrentSimulation(sessionId: string) {
   const [run] = await db
     .insert(practiceRuns)
     .values({
-      ...buildFinishedSimulationPayload(session),
+      ...buildFinishedSimulationPayload(session, recap),
       createdAt: now,
     })
     .returning();
@@ -2158,7 +2348,7 @@ export async function finishCurrentSimulation(sessionId: string) {
     }
 
     await db.insert(memories).values({
-      crushId: active.id,
+      crushId: session.crushId,
       sourceType: "practice_chapter",
       sourceId: completedChapter.id,
       title,
@@ -2600,7 +2790,7 @@ export async function updateCurrentAction(
     }
 
     const actionTitle = existing.title ?? "一次现实行动";
-    let title = `完成行动：${actionTitle}`;
+    const title = `完成行动：${actionTitle}`;
     let excerpt = `执行了行动「${actionTitle}」`;
 
     if (input.feedbackText?.trim()) {

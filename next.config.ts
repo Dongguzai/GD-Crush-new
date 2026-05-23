@@ -4,6 +4,7 @@ const r2PublicUrl = process.env.R2_PUBLIC_BASE_URL ? new URL(process.env.R2_PUBL
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
   images: {
     localPatterns: [
       {
