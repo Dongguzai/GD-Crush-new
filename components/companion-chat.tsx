@@ -45,6 +45,16 @@ type SuggestedPracticeAction = {
   coachAnalysisJson?: PracticeSummary | null;
 };
 
+/**
+ * A light-weight system UI invitation that appears below TA's message
+ * when the context suggests practicing a real communication scenario.
+ */
+type PracticeInvite = {
+  sourceMessageId: string;
+  goal: string;
+  background: string;
+};
+
 type RealityEvent = {
   id: string;
   sourceMessageId?: string | null;
@@ -67,6 +77,9 @@ type PracticeChapter = {
   summary?: PracticeSummary | null;
   suggestedAction?: SuggestedPracticeAction | null;
   actionSaved?: boolean;
+  /** Set when chapter was created from a TA invite to track trigger source for the API */
+  fromInvite?: boolean;
+  inviteSourceMessageId?: string | null;
 };
 
 type VoiceState = "idle" | "recording" | "processing";
@@ -202,6 +215,8 @@ export function CompanionChat() {
   const [text, setText] = useState("");
   const [autoPlay, setAutoPlay] = useState(true);
   const [practiceChapter, setPracticeChapter] = useState<PracticeChapter | null>(null);
+  const [practiceInvite, setPracticeInvite] = useState<PracticeInvite | null>(null);
+  const [dismissedInviteMessageIds, setDismissedInviteMessageIds] = useState<Set<string>>(new Set());
   const [recordedRealityMessageIds, setRecordedRealityMessageIds] = useState<Set<string>>(new Set());
   const [recordingRealityMessageId, setRecordingRealityMessageId] = useState<string | null>(null);
   const [practiceBusyLabel, setPracticeBusyLabel] = useState<string | null>(null);
@@ -365,7 +380,7 @@ export function CompanionChat() {
     setText("");
     startTransition(async () => {
       try {
-        const data = await readApiResponse<{ userMessage: Message; crushMessage: Message }>(
+        const data = await readApiResponse<{ userMessage: Message; crushMessage: Message; practiceInvite?: PracticeInvite }>(
           await fetch("/api/chat/companion", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -375,6 +390,15 @@ export function CompanionChat() {
         );
         setMessages((current) => [...current, data.userMessage, data.crushMessage]);
         synthesizeVoice(data.crushMessage);
+
+        // Handle practice invite if returned and not dismissed for this message
+        if (
+          data.practiceInvite &&
+          !dismissedInviteMessageIds.has(data.practiceInvite.sourceMessageId) &&
+          !practiceChapter
+        ) {
+          setPracticeInvite(data.practiceInvite);
+        }
       } catch (error) {
         setText(trimmedMessage);
         setChatNotice({
@@ -389,6 +413,8 @@ export function CompanionChat() {
 
   function openPracticeChapter() {
     setChatNotice(null);
+    // Clear any pending invite when practice chapter is opened
+    setPracticeInvite(null);
     setPracticeChapter((current) => {
       if (!current || current.status === "finished") {
         return createPracticeChapter();
@@ -396,6 +422,46 @@ export function CompanionChat() {
 
       return current;
     });
+  }
+
+  /**
+   * Opens practice chapter with pre-filled goal/background from a TA invite.
+   * Triggered when user clicks the system invite UI.
+   */
+  function acceptPracticeInvite() {
+    if (!practiceInvite) return;
+
+    setChatNotice(null);
+    // Dismiss this invite so it doesn't show again
+    setDismissedInviteMessageIds((prev) => new Set([...prev, practiceInvite.sourceMessageId]));
+    // Clear the invite
+    setPracticeInvite(null);
+    // Create practice chapter with pre-filled goal/background and invite metadata
+    setPracticeChapter({
+      id: `practice-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      status: "draft",
+      scenarioType: "conversation",
+      goal: practiceInvite.goal,
+      background: practiceInvite.background,
+      sessionId: null,
+      messages: [],
+      coachTips: [],
+      summary: null,
+      suggestedAction: null,
+      actionSaved: false,
+      fromInvite: true,
+      inviteSourceMessageId: practiceInvite.sourceMessageId,
+    });
+  }
+
+  /**
+   * Dismisses the practice invite without creating a draft.
+   * The invite won't show again for this source message in this session.
+   */
+  function dismissPracticeInvite() {
+    if (!practiceInvite) return;
+    setDismissedInviteMessageIds((prev) => new Set([...prev, practiceInvite.sourceMessageId]));
+    setPracticeInvite(null);
   }
 
   function updatePracticeDraft(field: "goal" | "background", value: string) {
@@ -417,7 +483,13 @@ export function CompanionChat() {
           await fetch("/api/practice/full-simulation/start", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ scenarioType: "conversation", goal, background }),
+            body: JSON.stringify({
+              scenarioType: "conversation",
+              goal,
+              background,
+              triggerSource: practiceChapter.fromInvite ? "ta_invite" : "user_click",
+              sourceMessageId: practiceChapter.inviteSourceMessageId ?? null,
+            }),
           }),
           "演练没有开始，请稍后重试。",
         );
@@ -913,6 +985,27 @@ export function CompanionChat() {
                       </div>
                     ) : null}
                   </div>
+                  {/* System UI: Practice invite shown below TA's message when context warrants it */}
+                  {practiceInvite && practiceInvite.sourceMessageId === message.id && message.role === "crush" ? (
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        className="inline-flex items-center gap-2 rounded-full border border-blush-200 bg-blush-50/80 px-3 py-1.5 text-xs font-bold text-blush-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-blush-100"
+                        type="button"
+                        onClick={acceptPracticeInvite}
+                      >
+                        <Sparkles aria-hidden="true" size={12} />
+                        要不要先演一遍？
+                      </button>
+                      <button
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-ink-400 transition hover:bg-ink-100"
+                        type="button"
+                        onClick={dismissPracticeInvite}
+                        aria-label="关闭"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : null}
                   {canRecordReality ? (
                     <button
                       className="mr-1 mt-1 inline-flex items-center rounded-full border border-blush-100 bg-white/80 px-3 py-1 text-xs font-black text-blush-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-blush-50 disabled:opacity-60"

@@ -2123,6 +2123,8 @@ export async function startCurrentSimulation(input: {
   scenarioType: string;
   goal: string;
   background: string;
+  triggerSource?: "user_click" | "ta_invite";
+  sourceMessageId?: string | null;
 }) {
   const { profile: active } = await getCurrentUserActiveCrush();
   if (!active) {
@@ -2138,7 +2140,15 @@ export async function startCurrentSimulation(input: {
   };
 
   if (!hasDatabaseUrl()) {
-    return startDevSimulation({ crushId: active.id, ...input, realityContextJson });
+    return startDevSimulation({
+      crushId: active.id,
+      scenarioType: input.scenarioType,
+      goal: input.goal,
+      background: input.background,
+      triggerSource: input.triggerSource ?? "user_click",
+      sourceMessageId: input.sourceMessageId,
+      realityContextJson,
+    });
   }
 
   const db = getDb();
@@ -2165,9 +2175,9 @@ export async function startCurrentSimulation(input: {
       practiceSessionId: session.id,
       title: input.goal,
       scenarioType: input.scenarioType,
-      triggerSource: "user_click",
+      triggerSource: input.triggerSource ?? "user_click",
+      startMessageId: input.sourceMessageId ?? startMessage?.id ?? null,
       status: "active",
-      startMessageId: startMessage?.id ?? null,
       realityContextJson,
     })
     .returning();

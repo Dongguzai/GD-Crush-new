@@ -179,7 +179,7 @@ Acceptance:
 
 ### [P0] M2.4 Introduce lightweight `演一遍` entry inside chat
 
-Status: Partially implemented in Batch 2
+Status: Batch 1 complete (TA-initiated contextual invitation implemented)
 
 Dependencies: M2.3
 
@@ -197,7 +197,7 @@ Acceptance:
 
 - Users can always find a way to start practice without leaving chat.
 - TA can invite practice naturally after first responding in-character.
-- Starting practice does not require understanding any hidden “mode” system.
+- Starting practice does not require understanding any hidden "mode" system.
 
 ### [P0] M2.5 Add first-entry and empty-state behavior for TA chat
 

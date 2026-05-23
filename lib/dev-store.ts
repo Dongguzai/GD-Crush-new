@@ -1086,6 +1086,8 @@ export async function startDevSimulation(input: {
   scenarioType: string;
   goal: string;
   background: string;
+  triggerSource?: "user_click" | "ta_invite";
+  sourceMessageId?: string | null;
   realityContextJson?: Record<string, unknown>;
 }) {
   const data = await readStore();
@@ -1108,9 +1110,9 @@ export async function startDevSimulation(input: {
     practiceRunId: null,
     title: input.goal,
     scenarioType: input.scenarioType,
-    triggerSource: "user_click",
+    triggerSource: input.triggerSource ?? "user_click",
     status: "active",
-    startMessageId: null,
+    startMessageId: input.sourceMessageId ?? null,
     endMessageId: null,
     realityContextJson: input.realityContextJson ?? { background: input.background },
     recapJson: {},
