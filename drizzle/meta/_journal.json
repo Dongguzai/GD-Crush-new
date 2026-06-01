@@ -43,6 +43,13 @@
       "when": 1747708800000,
       "tag": "0005_memories_enhancement",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1779504566800,
+      "tag": "0006_handy_orphan",
+      "breakpoints": true
     }
   ]
 }

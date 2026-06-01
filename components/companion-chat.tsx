@@ -887,31 +887,32 @@ export function CompanionChat() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col px-5 py-6 sm:px-8 lg:min-h-[calc(100vh-7rem)]">
-      <div className="mb-4 flex items-center justify-between gap-4 rounded-[2rem] border border-white/70 bg-white/75 p-5 shadow-xl shadow-blush-100/60 backdrop-blur">
+    <div className="mx-auto flex w-full max-w-4xl flex-col px-4 py-4 sm:px-6 lg:min-h-[calc(100vh-7rem)] pb-28 sm:pb-6 lg:pb-4">
+      <div className="mb-4 flex items-center justify-between gap-4 rounded-[2rem] border border-white/70 bg-white/75 p-4 shadow-xl shadow-blush-100/60 backdrop-blur sm:p-5">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink-900 font-display text-lg font-semibold text-white shadow-lg shadow-blush-200">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ink-900 font-display text-base font-semibold text-white shadow-lg shadow-blush-200 sm:h-12 sm:w-12 sm:text-lg">
             {(profile?.nickname ?? "TA").slice(0, 1)}
           </div>
           <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-blush-700">TA</p>
-            <h1 className="truncate font-display text-3xl font-semibold tracking-normal text-ink-900">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-blush-700 sm:text-xs">TA</p>
+            <h1 className="truncate font-display text-2xl font-semibold tracking-normal text-ink-900 sm:text-3xl">
               {headerTitle}
             </h1>
           </div>
         </div>
-        <label className="inline-flex shrink-0 items-center gap-2 text-sm font-bold text-ink-700">
+        <label className="inline-flex shrink-0 items-center gap-1.5 text-xs font-bold text-ink-700 sm:text-sm">
           <input
             checked={autoPlay}
             className="h-4 w-4 accent-blush-500"
             type="checkbox"
             onChange={(event) => setAutoPlay(event.target.checked)}
           />
-          语音自动播放
+          <span className="hidden sm:inline">语音自动播放</span>
+          <span className="sm:hidden">语音</span>
         </label>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden rounded-[2rem] border border-white/70 bg-white/65 p-4 shadow-2xl shadow-blush-200/40 backdrop-blur">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-[1.75rem] border border-white/70 bg-white/65 p-3 shadow-2xl shadow-blush-200/40 backdrop-blur sm:gap-3 sm:p-4 lg:relative lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none">
         {chatNotice ? (
           <StatePanel
             tone={chatNotice.tone}
@@ -921,7 +922,7 @@ export function CompanionChat() {
             onAction={chatNotice.retry}
           />
         ) : null}
-        <div className="flex-1 space-y-3 overflow-y-auto pr-1">
+        <div className="flex-1 space-y-2.5 overflow-y-auto pr-1 sm:space-y-3">
           {loadState === "loading" ? (
             <StatePanel tone="loading" title="正在加载聊天记录" description="把最近的陪伴消息整理出来。" />
           ) : loadState === "error" ? (
@@ -943,15 +944,15 @@ export function CompanionChat() {
                   className={`flex flex-col ${message.role === "user" ? "items-end" : "items-start"}`}
                 >
                   <div
-                    className={`max-w-[82%] rounded-[1.5rem] px-4 py-3 text-sm leading-6 shadow-sm ${
+                    className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm leading-5 shadow-sm sm:max-w-[82%] sm:rounded-[1.5rem] sm:px-4 sm:py-3 sm:text-sm sm:leading-6 ${
                       message.role === "user"
                         ? "bg-ink-900 text-white"
                         : "border border-blush-100 bg-white text-ink-900"
                     }`}
                   >
-                    <p>{message.content}</p>
+                    <p className="whitespace-pre-wrap break-words">{message.content}</p>
                     {message.role === "crush" ? (
-                      <div className="mt-3 flex items-center gap-2">
+                      <div className="mt-2.5 flex items-center gap-1.5 sm:mt-3 sm:gap-2">
                         {message.audioUrl ? (
                           <audio
                             ref={index === messages.length - 1 ? latestAudioRef : undefined}
@@ -959,7 +960,7 @@ export function CompanionChat() {
                           />
                         ) : null}
                         <button
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-blush-50 text-blush-700"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blush-50 text-blush-700 sm:h-9 sm:w-9"
                           type="button"
                           onClick={() => {
                             if (message.audioUrl) {
@@ -972,15 +973,15 @@ export function CompanionChat() {
                           }}
                           aria-label="播放语音"
                         >
-                          <Play aria-hidden="true" size={16} />
+                          <Play aria-hidden="true" size={14} className="sm:w-4 sm:h-4" />
                         </button>
                         <button
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-sun-100 text-ink-700"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-sun-100 text-ink-700 sm:h-9 sm:w-9"
                           type="button"
                           onClick={() => favorite(message)}
                           aria-label="收藏为回忆"
                         >
-                          <Star aria-hidden="true" size={16} />
+                          <Star aria-hidden="true" size={14} className="sm:w-4 sm:h-4" />
                         </button>
                       </div>
                     ) : null}
@@ -989,15 +990,15 @@ export function CompanionChat() {
                   {practiceInvite && practiceInvite.sourceMessageId === message.id && message.role === "crush" ? (
                     <div className="mt-2 flex items-center gap-2">
                       <button
-                        className="inline-flex items-center gap-2 rounded-full border border-blush-200 bg-blush-50/80 px-3 py-1.5 text-xs font-bold text-blush-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-blush-100"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-blush-200 bg-blush-50/80 px-2.5 py-1.5 text-xs font-bold text-blush-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-blush-100 sm:gap-2 sm:px-3 sm:py-1.5 sm:text-xs"
                         type="button"
                         onClick={acceptPracticeInvite}
                       >
-                        <Sparkles aria-hidden="true" size={12} />
+                        <Sparkles aria-hidden="true" size={11} />
                         要不要先演一遍？
                       </button>
                       <button
-                        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-ink-400 transition hover:bg-ink-100"
+                        className="inline-flex h-5 w-5 items-center justify-center rounded-full text-ink-400 transition hover:bg-ink-100 sm:h-6 sm:w-6"
                         type="button"
                         onClick={dismissPracticeInvite}
                         aria-label="关闭"
@@ -1008,7 +1009,7 @@ export function CompanionChat() {
                   ) : null}
                   {canRecordReality ? (
                     <button
-                      className="mr-1 mt-1 inline-flex items-center rounded-full border border-blush-100 bg-white/80 px-3 py-1 text-xs font-black text-blush-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-blush-50 disabled:opacity-60"
+                      className="mr-1 mt-1 inline-flex items-center rounded-full border border-blush-100 bg-white/80 px-2 py-0.5 text-[11px] font-black text-blush-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-blush-50 disabled:opacity-60 sm:mr-1 sm:mt-1 sm:px-3 sm:py-1 sm:text-xs"
                       disabled={recordingRealityMessageId === message.id}
                       type="button"
                       onClick={() => recordRealityEvent(message)}
@@ -1021,7 +1022,7 @@ export function CompanionChat() {
             })
           ) : profile ? (
             <div className="flex justify-start">
-              <div className="max-w-[82%] rounded-[1.5rem] border border-blush-100 bg-white px-4 py-3 text-sm leading-6 text-ink-900 shadow-sm">
+              <div className="max-w-[88%] rounded-2xl border border-blush-100 bg-white px-3.5 py-2.5 text-sm leading-5 text-ink-900 shadow-sm sm:max-w-[82%] sm:rounded-[1.5rem] sm:px-4 sm:py-3 sm:text-sm sm:leading-6">
                 <p>你来了。</p>
                 <p className="mt-1">今天想先和我说什么？</p>
               </div>
@@ -1055,10 +1056,10 @@ export function CompanionChat() {
         </div>
 
         {/* Sticky input area for mobile - visible above bottom nav */}
-        <div className="sticky bottom-0 -mx-4 -mb-4 rounded-b-[2rem] border-t border-blush-100 bg-white/95 p-4 backdrop-blur lg:relative lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
-          <div className="flex gap-2">
+        <div className="sticky bottom-0 -mx-3 -mb-3 rounded-b-[1.75rem] border-t border-blush-100 bg-white/95 p-3 backdrop-blur sm:-mx-4 sm:-mb-4 sm:rounded-b-[2rem] sm:p-4 lg:relative lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
+          <div className="flex items-center gap-2">
             <button
-              className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-full border border-ink-900/10 bg-white px-4 text-sm font-bold text-ink-900 transition hover:bg-blush-50 disabled:opacity-50"
+              className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-full border border-ink-900/10 bg-white px-3 text-xs font-bold text-ink-900 transition hover:bg-blush-50 disabled:opacity-50 sm:px-4 sm:text-sm"
               disabled={loadState !== "ready" || !profile || isPracticeActive || isPracticeDraft}
               type="button"
               onClick={openPracticeChapter}
@@ -1066,7 +1067,7 @@ export function CompanionChat() {
               {isPracticeActive ? "演练中" : "演一遍"}
             </button>
             <button
-              className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full transition ${
+              className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition sm:h-12 sm:w-12 ${
                 voiceState === "recording"
                   ? "animate-pulse bg-blush-500 text-white"
                   : "bg-mint-100 text-mint-500"
@@ -1076,10 +1077,10 @@ export function CompanionChat() {
               onClick={handleVoiceInput}
               aria-label={voiceState === "recording" ? "停止录音" : "语音输入"}
             >
-              <Mic aria-hidden="true" size={20} />
+              <Mic aria-hidden="true" size={18} />
             </button>
             <input
-              className="min-w-0 flex-1 rounded-full border border-blush-100 bg-white px-4 text-base font-semibold outline-none focus:border-blush-500 disabled:text-ink-500"
+              className="min-w-0 flex-1 rounded-full border border-blush-100 bg-white px-3 py-2.5 text-sm font-semibold outline-none transition focus:border-blush-500 disabled:text-ink-500 sm:px-4 sm:py-3 sm:text-base"
               placeholder={composerPlaceholder}
               disabled={composerDisabled}
               value={text}
@@ -1091,16 +1092,16 @@ export function CompanionChat() {
               }}
             />
             <button
-              className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink-900 text-white disabled:opacity-50"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ink-900 text-white disabled:opacity-50 sm:h-12 sm:w-12"
               disabled={isPending || voiceState !== "idle" || composerDisabled}
               type="button"
               onClick={() => send(text)}
               aria-label="发送"
             >
-              <Send aria-hidden="true" size={20} />
+              <Send aria-hidden="true" size={18} />
             </button>
           </div>
-          {voiceMessage ? <p className="mt-1 px-2 text-xs font-bold text-ink-600 lg:hidden">{voiceMessage}</p> : null}
+          {voiceMessage ? <p className="mt-1.5 px-2 text-xs font-bold text-ink-600 lg:hidden">{voiceMessage}</p> : null}
         </div>
       </div>
     </div>
@@ -1133,65 +1134,65 @@ function PracticeChapterPanel({
   onUpdateDraft: (field: "goal" | "background", value: string) => void;
 }) {
   return (
-    <div className="my-2 overflow-hidden rounded-[1.75rem] border border-ink-900/10 bg-ink-900 text-white shadow-xl shadow-ink-900/10">
-      <div className="border-b border-white/10 bg-white/5 px-4 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="my-2 overflow-hidden rounded-2xl border border-ink-900/10 bg-ink-900 text-white shadow-xl shadow-ink-900/10 sm:my-2 sm:rounded-[1.75rem]">
+      <div className="border-b border-white/10 bg-white/5 px-3 py-2.5 sm:px-4 sm:py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.24em] text-blush-200">演练章节</p>
-            <h2 className="mt-1 text-xl font-semibold tracking-normal sm:text-2xl">
-              现实中的 {profileName} 模拟
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-blush-200 sm:text-xs">演练章节</p>
+            <h2 className="mt-0.5 text-base font-semibold tracking-normal text-white sm:mt-1 sm:text-xl">
+              现实中的 {profileName}
             </h2>
           </div>
-          <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/80">
+          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold text-white/80 sm:px-3 sm:py-1 sm:text-xs">
             {chapter.status === "draft" ? "准备中" : chapter.status === "active" ? "进行中" : "已结束"}
           </span>
         </div>
       </div>
 
       {busyLabel ? (
-        <div className="px-4 pt-4">
-          <div className="rounded-3xl border border-white/10 bg-white/10 p-4 text-sm font-bold text-white/85">
+        <div className="px-3 pt-3 sm:px-4 sm:pt-4">
+          <div className="rounded-2xl border border-white/10 bg-white/10 p-3 text-xs font-bold text-white/85 sm:rounded-3xl sm:p-4 sm:text-sm">
             {busyLabel}
           </div>
         </div>
       ) : null}
 
       {chapter.status === "draft" ? (
-        <div className="grid gap-4 p-4">
-          <div className="rounded-3xl bg-white p-4 text-sm leading-7 text-ink-800">
+        <div className="grid gap-3 p-3 sm:gap-4 sm:p-4">
+          <div className="rounded-2xl bg-white p-3 text-xs leading-6 text-ink-800 sm:rounded-3xl sm:p-4 sm:text-sm">
             <p className="font-black text-ink-900">这段不会跳到另一个页面。</p>
-            <p className="mt-1">你先告诉我想演哪件现实里的事，然后直接用下面的聊天输入框开始说。</p>
+            <p className="mt-1">先告诉我想演什么，然后用下面的输入框开始说。</p>
           </div>
-          <label className="grid gap-2 text-sm font-bold text-white/85">
+          <label className="grid gap-1.5 text-xs font-bold text-white/85 sm:gap-2 sm:text-sm">
             这次想演什么？
             <textarea
-              className="min-h-24 rounded-3xl border border-white/15 bg-white px-4 py-3 text-base font-semibold leading-7 text-ink-900 outline-none focus:border-blush-300"
+              className="min-h-20 rounded-2xl border border-white/15 bg-white px-3 py-2.5 text-sm font-semibold leading-6 text-ink-900 outline-none focus:border-blush-300 sm:min-h-24 sm:rounded-3xl sm:px-4 sm:py-3 sm:text-base"
               placeholder="比如：想约 TA 周末见面，但怕太突然。"
               value={chapter.goal}
               onChange={(event) => onUpdateDraft("goal", event.target.value)}
             />
           </label>
-          <label className="grid gap-2 text-sm font-bold text-white/85">
+          <label className="grid gap-1.5 text-xs font-bold text-white/85 sm:gap-2 sm:text-sm">
             现实背景（可选）
             <textarea
-              className="min-h-20 rounded-3xl border border-white/15 bg-white px-4 py-3 text-sm font-semibold leading-7 text-ink-900 outline-none focus:border-blush-300"
-              placeholder="比如：最近聊过一家店，TA 回复不算冷淡，但也没有主动推进。"
+              className="min-h-16 rounded-2xl border border-white/15 bg-white px-3 py-2 text-xs font-semibold leading-6 text-ink-900 outline-none focus:border-blush-300 sm:min-h-20 sm:rounded-3xl sm:px-4 sm:py-3 sm:text-sm"
+              placeholder="比如：最近聊过一家店，TA 回复不算冷淡。"
               value={chapter.background}
               onChange={(event) => onUpdateDraft("background", event.target.value)}
             />
           </label>
           <div className="flex flex-wrap gap-2">
             <button
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-blush-500 px-5 font-black text-white transition hover:bg-blush-600 disabled:opacity-60"
+              className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-full bg-blush-500 px-4 font-black text-white transition hover:bg-blush-600 disabled:opacity-60 sm:min-h-11 sm:gap-2 sm:px-5"
               disabled={isPending}
               type="button"
               onClick={onStart}
             >
-              <Sparkles aria-hidden="true" size={16} />
+              <Sparkles aria-hidden="true" size={14} />
               开始演练
             </button>
             <button
-              className="inline-flex min-h-11 items-center justify-center rounded-full bg-white/10 px-5 font-bold text-white transition hover:bg-white/15"
+              className="inline-flex min-h-10 items-center justify-center rounded-full bg-white/10 px-4 font-bold text-white transition hover:bg-white/15 sm:min-h-11 sm:px-5"
               type="button"
               onClick={onCancel}
             >
@@ -1202,26 +1203,26 @@ function PracticeChapterPanel({
       ) : null}
 
       {chapter.status === "active" ? (
-        <div className="grid gap-4 p-4">
-          <div className="rounded-3xl bg-white/10 p-4 text-sm leading-7 text-white/80">
+        <div className="grid gap-3 p-3 sm:gap-4 sm:p-4">
+          <div className="rounded-2xl bg-white/10 p-3 text-xs leading-6 text-white/80 sm:rounded-3xl sm:p-4 sm:text-sm">
             <p className="font-black text-white">{chapter.goal}</p>
-            <p className="mt-1">现在我会更像现实里的 TA，不保证甜，也不会自动给教练分析。你先说。</p>
+            <p className="mt-1">现在更像现实里的 TA，不会自动给提示。你先说。</p>
           </div>
-          <div className="grid gap-3">
+          <div className="grid gap-2.5 sm:gap-3">
             {chapter.messages.length ? (
               chapter.messages.map((message) => (
                 <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
                   <div
-                    className={`max-w-[84%] rounded-[1.4rem] px-4 py-3 text-sm leading-6 ${
+                    className={`max-w-[90%] rounded-xl px-3 py-2.5 text-xs leading-5 sm:max-w-[84%] sm:rounded-[1.4rem] sm:px-4 sm:py-3 sm:text-sm sm:leading-6 ${
                       message.role === "user" ? "bg-white text-ink-900" : "bg-blush-50 text-ink-900"
                     }`}
                   >
-                    <p className="mb-1 text-[11px] font-black uppercase tracking-[0.16em] text-ink-500">
-                      {message.role === "user" ? "你" : `${profileName} · 现实模拟`}
+                    <p className="mb-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-ink-500 sm:mb-1 sm:text-[11px]">
+                      {message.role === "user" ? "你" : `${profileName}`}
                     </p>
-                    <p>{message.content}</p>
+                    <p className="whitespace-pre-wrap break-words">{message.content}</p>
                     {message.coachTip?.advice ? (
-                      <details className="mt-3 rounded-2xl bg-white/70 px-3 py-2 text-xs leading-6 text-ink-700">
+                      <details className="mt-2 rounded-xl bg-white/70 px-2.5 py-2 text-xs leading-5 text-ink-700 sm:mt-3 sm:rounded-2xl sm:px-3 sm:py-2">
                         <summary className="cursor-pointer font-black text-ink-900">提示一下</summary>
                         <p className="mt-1">{message.coachTip.advice}</p>
                         {message.coachTip.nextMove ? <p className="mt-1">下一步：{message.coachTip.nextMove}</p> : null}
@@ -1232,18 +1233,18 @@ function PracticeChapterPanel({
               ))
             ) : (
               <div className="flex justify-start">
-                <div className="max-w-[84%] rounded-[1.4rem] bg-blush-50 px-4 py-3 text-sm leading-6 text-ink-900">
-                  <p className="mb-1 text-[11px] font-black uppercase tracking-[0.16em] text-ink-500">
-                    {profileName} · 现实模拟
+                <div className="max-w-[90%] rounded-xl bg-blush-50 px-3 py-2.5 text-xs leading-5 text-ink-900 sm:max-w-[84%] sm:rounded-[1.4rem] sm:px-4 sm:py-3 sm:text-sm sm:leading-6">
+                  <p className="mb-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-ink-500 sm:mb-1 sm:text-[11px]">
+                    {profileName}
                   </p>
                   <p>好，那就当现在是在现实里。你先说。</p>
                 </div>
               </div>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
+          <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-3 sm:pt-4">
             <button
-              className="inline-flex min-h-11 items-center justify-center rounded-full bg-white/10 px-5 font-bold text-white transition hover:bg-white/15 disabled:opacity-60"
+              className="inline-flex min-h-10 items-center justify-center rounded-full bg-white/10 px-3 text-xs font-bold text-white transition hover:bg-white/15 disabled:opacity-60 sm:min-h-11 sm:px-5 sm:text-sm"
               disabled={isPending || !chapter.messages.some((message) => message.role === "user")}
               type="button"
               onClick={onRetryLast}
@@ -1251,80 +1252,80 @@ function PracticeChapterPanel({
               重来这句
             </button>
             <button
-              className="inline-flex min-h-11 items-center justify-center rounded-full bg-white px-5 font-black text-ink-900 transition hover:bg-blush-50 disabled:opacity-60"
+              className="inline-flex min-h-10 items-center justify-center rounded-full bg-white px-3 text-xs font-black text-ink-900 transition hover:bg-blush-50 disabled:opacity-60 sm:min-h-11 sm:px-5 sm:text-sm"
               disabled={isPending || !chapter.messages.length}
               type="button"
               onClick={onFinish}
             >
-              结束演练，回到日常聊天
+              结束演练
             </button>
-            <p className="text-xs font-bold text-white/55">演练中的提示默认收起，只在你点开时出现。</p>
+            <p className="w-full text-[10px] font-bold text-white/55 sm:w-auto sm:text-xs">提示默认收起，点开才出现。</p>
           </div>
         </div>
       ) : null}
 
       {chapter.status === "finished" ? (
-        <div className="grid gap-4 p-4">
-          <div className="rounded-3xl bg-white p-4 text-sm leading-7 text-ink-800">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-blush-700">这轮试下来</p>
-            <p className="mt-2 font-black text-ink-900">
+        <div className="grid gap-3 p-3 sm:gap-4 sm:p-4">
+          <div className="rounded-2xl bg-white p-3 text-xs leading-6 text-ink-800 sm:rounded-3xl sm:p-4 sm:text-sm">
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blush-700 sm:text-xs">这轮试下来</p>
+            <p className="mt-1.5 font-black text-ink-900 sm:mt-2">
               {chapter.summary?.summary ?? "你已经完成了一轮现实表达预演。"}
             </p>
             {chapter.summary?.mainRisk ? (
-              <p className="mt-3 rounded-2xl bg-rose-50 p-3 font-bold text-rose-700">
+              <p className="mt-2 rounded-xl bg-rose-50 p-2.5 font-bold text-rose-700 sm:mt-3 sm:rounded-2xl sm:p-3">
                 主要风险：{chapter.summary.mainRisk}
               </p>
             ) : null}
             {chapter.summary?.saferAlternative ? (
-              <p className="mt-3 rounded-2xl bg-mint-100/60 p-3 font-bold text-ink-800">
+              <p className="mt-2 rounded-xl bg-mint-100/60 p-2.5 font-bold text-ink-800 sm:mt-3 sm:rounded-2xl sm:p-3">
                 更稳方向：{chapter.summary.saferAlternative}
               </p>
             ) : null}
             {chapter.summary?.riskPoints?.length ? (
-              <ul className="mt-2 list-disc space-y-1 pl-5">
+              <ul className="mt-1.5 list-disc space-y-0.5 pl-4 sm:mt-2">
                 {chapter.summary.riskPoints.map((point) => (
                   <li key={point}>{point}</li>
                 ))}
               </ul>
             ) : null}
             {chapter.suggestedAction?.suggestedLine ? (
-              <div className="mt-3 rounded-2xl bg-blush-50 p-3 font-bold text-ink-900">
-                更稳一点可以说：{chapter.suggestedAction.suggestedLine}
+              <div className="mt-2 rounded-xl bg-blush-50 p-2.5 font-bold text-ink-900 sm:mt-3 sm:rounded-2xl sm:p-3">
+                更稳一点：{chapter.suggestedAction.suggestedLine}
               </div>
             ) : null}
             {chapter.summary?.recommendedNextAction ? (
-              <p className="mt-3">下一步：{chapter.summary.recommendedNextAction}</p>
+              <p className="mt-1.5 text-xs sm:mt-3 sm:text-sm">下一步：{chapter.summary.recommendedNextAction}</p>
             ) : null}
           </div>
           <div className="flex justify-start">
-            <div className="max-w-[84%] rounded-[1.4rem] bg-blush-50 px-4 py-3 text-sm leading-6 text-ink-900">
-              <p className="mb-1 text-[11px] font-black uppercase tracking-[0.16em] text-ink-500">{profileName}</p>
-              <p>刚才这段我知道了。我们先回到平时聊天，不用马上逼自己去做。</p>
+            <div className="max-w-[90%] rounded-xl bg-blush-50 px-3 py-2.5 text-xs leading-5 text-ink-900 sm:max-w-[84%] sm:rounded-[1.4rem] sm:px-4 sm:py-3 sm:text-sm sm:leading-6">
+              <p className="mb-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-ink-500 sm:mb-1 sm:text-[11px]">{profileName}</p>
+              <p>刚才这段我知道了。先回到平时聊天，不用马上逼自己。</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-white px-5 font-black text-ink-900 transition hover:bg-blush-50 disabled:opacity-60"
+              className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-full bg-white px-3 font-black text-ink-900 transition hover:bg-blush-50 disabled:opacity-60 sm:min-h-11 sm:gap-2 sm:px-5 sm:text-sm"
               disabled={isPending || !chapter.suggestedAction || chapter.actionSaved}
               type="button"
               onClick={onSaveAction}
             >
-              <Save aria-hidden="true" size={16} />
-              {chapter.actionSaved ? "已生成现实行动" : "生成现实行动"}
+              <Save aria-hidden="true" size={14} />
+              {chapter.actionSaved ? "已生成行动" : "生成行动"}
             </button>
             <button
-              className="inline-flex min-h-11 items-center justify-center rounded-full bg-white/10 px-5 font-bold text-white transition hover:bg-white/15"
+              className="inline-flex min-h-10 items-center justify-center rounded-full bg-white/10 px-3 font-bold text-white transition hover:bg-white/15 sm:min-h-11 sm:px-5 sm:text-sm"
               type="button"
               onClick={onReset}
             >
               再演一遍
             </button>
             <button
-              className="inline-flex min-h-11 items-center justify-center rounded-full bg-white/10 px-5 font-bold text-white transition hover:bg-white/15"
+              className="inline-flex min-h-10 items-center justify-center rounded-full bg-white/10 px-3 font-bold text-white transition hover:bg-white/15 sm:min-h-11 sm:px-5 sm:text-sm"
               type="button"
               onClick={onCancel}
             >
-              收起章节
+              收起
             </button>
           </div>
         </div>

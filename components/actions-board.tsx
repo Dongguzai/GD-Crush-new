@@ -137,17 +137,17 @@ function ActionCard({ action, onUpdate }: { action: HydratedAction; onUpdate: (i
   }
 
   return (
-    <article className="rounded-3xl border border-blush-200/60 bg-blush-50/40 p-4 text-sm shadow-sm">
+    <article className="rounded-2xl border border-blush-200/60 bg-blush-50/40 p-3.5 text-sm shadow-sm sm:rounded-3xl sm:p-4">
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <p className="font-black text-ink-900 leading-snug">{action.title}</p>
           {action.suggestedMessage && (
-            <p className="mt-1 text-ink-600 leading-relaxed line-clamp-2">{action.suggestedMessage}</p>
+            <p className="mt-1 text-xs text-ink-600 leading-relaxed line-clamp-2 sm:text-sm">{action.suggestedMessage}</p>
           )}
         </div>
         <span
-          className={`shrink-0 rounded-full border px-3 py-1 text-xs font-bold ${
+          className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold sm:px-3 sm:py-1 sm:text-xs ${
             status === "done"
               ? "border-emerald-300 bg-emerald-50 text-emerald-700"
               : status === "skipped"
@@ -164,16 +164,17 @@ function ActionCard({ action, onUpdate }: { action: HydratedAction; onUpdate: (i
         {status === "pending" && !feedbackMode && (
           <>
             <button
-              className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-bold text-ink-700 shadow-sm transition hover:bg-amber-50 disabled:opacity-60"
+              className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-ink-700 shadow-sm transition hover:bg-amber-50 disabled:opacity-60 sm:gap-1.5 sm:px-4 sm:py-2 sm:text-sm"
               disabled={isPending}
               type="button"
               onClick={() => submitFeedback("sent")}
             >
-              <CornerDownLeft size={13} />
-              已发送
+              <CornerDownLeft size={12} className="sm:size-[13px]" />
+              <span className="hidden sm:inline">已发送</span>
+              <span className="sm:hidden">发送</span>
             </button>
             <button
-              className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-bold text-ink-700 shadow-sm transition hover:bg-emerald-50 disabled:opacity-60"
+              className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-ink-700 shadow-sm transition hover:bg-emerald-50 disabled:opacity-60 sm:gap-1.5 sm:px-4 sm:py-2 sm:text-sm"
               disabled={isPending}
               type="button"
               onClick={() => {
@@ -181,17 +182,18 @@ function ActionCard({ action, onUpdate }: { action: HydratedAction; onUpdate: (i
                 setTimeout(() => feedbackRef.current?.focus(), 50);
               }}
             >
-              <Edit3 size={13} />
-              记录反馈
+              <Edit3 size={12} className="sm:size-[13px]" />
+              记录
             </button>
             <button
-              className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-xs font-bold text-slate-500 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"
+              className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-slate-500 shadow-sm transition hover:bg-slate-50 disabled:opacity-60 sm:gap-1.5 sm:px-4 sm:py-2 sm:text-sm"
               disabled={isPending}
               type="button"
               onClick={() => submitFeedback("skipped")}
             >
-              <SkipForward size={13} />
-              跳过
+              <SkipForward size={12} className="sm:size-[13px]" />
+              <span className="hidden sm:inline">跳过</span>
+              <span className="sm:hidden">跳</span>
             </button>
           </>
         )}
@@ -199,7 +201,7 @@ function ActionCard({ action, onUpdate }: { action: HydratedAction; onUpdate: (i
           <div className="w-full">
             <textarea
               ref={feedbackRef}
-              className="w-full rounded-2xl border border-blush-200 bg-white p-3 text-sm text-ink-800 placeholder-ink-300 focus:outline-none focus:ring-2 focus:ring-blush-300/50 resize-none"
+              className="w-full rounded-2xl border border-blush-200 bg-white p-2.5 text-sm text-ink-800 placeholder-ink-300 focus:outline-none focus:ring-2 focus:ring-blush-300/50 resize-none sm:p-3 sm:text-base"
               placeholder="记录现实里发生了什么……"
               rows={3}
               value={feedbackText}
@@ -212,10 +214,10 @@ function ActionCard({ action, onUpdate }: { action: HydratedAction; onUpdate: (i
               }}
             />
             <div className="mt-2 flex items-center justify-between">
-              <p className="text-xs text-ink-400">⌘+Enter 提交</p>
-              <div className="flex gap-2">
+              <p className="text-[10px] text-ink-400 sm:text-xs">⌘+Enter 提交</p>
+              <div className="flex gap-1.5 sm:gap-2">
                 <button
-                  className="rounded-full bg-white px-4 py-2 text-xs font-bold text-slate-500 transition hover:bg-slate-50"
+                  className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-slate-500 transition hover:bg-slate-50 sm:px-4 sm:py-2 sm:text-sm"
                   disabled={isPending}
                   type="button"
                   onClick={() => setFeedbackMode(false)}
@@ -223,13 +225,13 @@ function ActionCard({ action, onUpdate }: { action: HydratedAction; onUpdate: (i
                   取消
                 </button>
                 <button
-                  className="inline-flex items-center gap-1 rounded-full bg-blush-500 px-4 py-2 text-xs font-bold text-white transition hover:bg-blush-600 disabled:opacity-60"
+                  className="inline-flex items-center gap-1 rounded-full bg-blush-500 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-blush-600 disabled:opacity-60 sm:gap-1 sm:px-4 sm:py-2 sm:text-sm"
                   disabled={isPending || !feedbackText.trim()}
                   type="button"
                   onClick={submitTextFeedback}
                 >
-                  <ThumbsUp size={13} />
-                  记录反馈
+                  <ThumbsUp size={12} className="sm:size-[13px]" />
+                  记录
                 </button>
               </div>
             </div>
@@ -237,17 +239,17 @@ function ActionCard({ action, onUpdate }: { action: HydratedAction; onUpdate: (i
         )}
         {status !== "pending" && !feedbackMode && (
           <div className="flex w-full flex-wrap items-center gap-2">
-            <span className="text-xs text-ink-500">
+            <span className="text-xs text-ink-500 sm:text-sm">
               {statusLabel(action.status)}
               {action.feedbackText && `：${action.feedbackText}`}
             </span>
             <button
-              className="ml-auto inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-500 transition hover:bg-slate-50"
+              className="ml-auto inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-slate-500 transition hover:bg-slate-50 sm:px-3 sm:py-1 sm:text-xs"
               type="button"
               onClick={() => setFeedbackMode(true)}
             >
-              <Edit3 size={11} />
-              补充反馈
+              <Edit3 size={10} className="sm:size-4" />
+              补充
             </button>
           </div>
         )}
@@ -255,27 +257,27 @@ function ActionCard({ action, onUpdate }: { action: HydratedAction; onUpdate: (i
           <div className="w-full">
             <textarea
               ref={feedbackRef}
-              className="w-full rounded-2xl border border-blush-200 bg-white p-3 text-sm text-ink-800 placeholder-ink-300 focus:outline-none focus:ring-2 focus:ring-blush-300/50 resize-none"
+              className="w-full rounded-2xl border border-blush-200 bg-white p-2.5 text-sm text-ink-800 placeholder-ink-300 focus:outline-none focus:ring-2 focus:ring-blush-300/50 resize-none sm:p-3 sm:text-base"
               placeholder="补充更多反馈……"
               rows={2}
               value={feedbackText}
               onChange={(e) => setFeedbackText(e.target.value)}
             />
-            <div className="mt-2 flex justify-end gap-2">
+            <div className="mt-2 flex justify-end gap-1.5 sm:gap-2">
               <button
-                className="rounded-full bg-white px-4 py-2 text-xs font-bold text-slate-500 transition hover:bg-slate-50"
+                className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-slate-500 transition hover:bg-slate-50 sm:px-4 sm:py-2 sm:text-sm"
                 type="button"
                 onClick={() => setFeedbackMode(false)}
               >
                 取消
               </button>
               <button
-                className="inline-flex items-center gap-1 rounded-full bg-blush-500 px-4 py-2 text-xs font-bold text-white transition hover:bg-blush-600 disabled:opacity-60"
+                className="inline-flex items-center gap-1 rounded-full bg-blush-500 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-blush-600 disabled:opacity-60 sm:gap-1 sm:px-4 sm:py-2 sm:text-sm"
                 disabled={isPending || !feedbackText.trim()}
                 type="button"
                 onClick={submitTextFeedback}
               >
-                保存补充
+                保存
               </button>
             </div>
           </div>
@@ -284,15 +286,15 @@ function ActionCard({ action, onUpdate }: { action: HydratedAction; onUpdate: (i
 
       {/* Source chapter summary */}
       {action.sourceChapter && (
-        <div className="mt-3 rounded-2xl border border-blush-100 bg-white/70 p-3">
-          <p className="mb-1 text-xs font-bold text-blush-600">
-            来源演练：{action.sourceChapter.title}
+        <div className="mt-3 rounded-xl border border-blush-100 bg-white/70 p-2.5 sm:mt-3 sm:rounded-2xl sm:p-3">
+          <p className="text-[10px] font-bold text-blush-600 sm:text-xs">
+            演练：{action.sourceChapter.title}
           </p>
           {action.sourceChapter.recapSummary && (
-            <p className="text-xs text-ink-500 leading-relaxed">{action.sourceChapter.recapSummary}</p>
+            <p className="mt-1 text-[10px] text-ink-500 leading-relaxed sm:text-xs">{action.sourceChapter.recapSummary}</p>
           )}
           {action.sourceChapter.coachAnalysisJson?.recommendedNextAction && (
-            <p className="mt-1 text-xs italic text-ink-400">
+            <p className="mt-1 hidden text-[10px] italic text-ink-400 sm:block sm:text-xs">
               下一步：{action.sourceChapter.coachAnalysisJson.recommendedNextAction}
             </p>
           )}
@@ -303,34 +305,34 @@ function ActionCard({ action, onUpdate }: { action: HydratedAction; onUpdate: (i
       {(signals.length > 0 || inferences.length > 0 || events.length > 0) && (
         <div className="mt-3">
           <button
-            className="inline-flex items-center gap-1 text-xs font-bold text-blush-600 transition hover:text-blush-700"
+            className="inline-flex items-center gap-1 text-[10px] font-bold text-blush-600 transition hover:text-blush-700 sm:text-xs"
             type="button"
             onClick={() => setExpanded((v) => !v)}
           >
-            关联现实信号
+            现实信号
             {signals.length > 0 && (
-              <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700">{signals.length}</span>
+              <span className="rounded-full bg-amber-100 px-1 py-0.5 text-[10px] text-amber-700 sm:px-1.5 sm:py-0.5 sm:text-xs">{signals.length}</span>
             )}
-            {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            {expanded ? <ChevronUp size={11} className="sm:size-3" /> : <ChevronDown size={11} className="sm:size-3" />}
           </button>
 
           {expanded && (
-            <div className="mt-2 flex flex-col gap-2">
+            <div className="mt-2 flex flex-col gap-1.5 sm:gap-2">
               {signals.map((signal) => (
                 <div
                   key={signal.id}
-                  className={`rounded-xl border px-3 py-2 text-xs leading-relaxed ${polarityColor(signal.polarity)}`}
+                  className={`rounded-xl border px-2.5 py-2 text-[11px] leading-relaxed sm:px-3 sm:py-2 sm:text-xs ${polarityColor(signal.polarity)}`}
                 >
                   <span className="font-black">{signal.label}</span>
-                  {signal.description && <span className="ml-1.5 text-ink-600">{signal.description}</span>}
+                  {signal.description && <span className="ml-1 text-ink-600">{signal.description}</span>}
                 </div>
               ))}
               {inferences.map((inference) => (
-                <div key={inference.id} className="rounded-xl border border-violet-100 bg-violet-50 px-3 py-2 text-xs leading-relaxed text-violet-700">
+                <div key={inference.id} className="rounded-xl border border-violet-100 bg-violet-50 px-2.5 py-2 text-[11px] leading-relaxed text-violet-700 sm:px-3 sm:py-2 sm:text-xs">
                   <span className="font-black">{inference.label}</span>
-                  {inference.description && <span className="ml-1.5">{inference.description}</span>}
+                  {inference.description && <span className="ml-1">{inference.description}</span>}
                   {inference.confidence !== null && (
-                    <span className="ml-1.5 text-violet-400">
+                    <span className="ml-1 text-violet-400">
                       {Math.round(inference.confidence * 100)}%
                     </span>
                   )}
@@ -339,7 +341,7 @@ function ActionCard({ action, onUpdate }: { action: HydratedAction; onUpdate: (i
               {events
                 .filter((e) => e.eventType === "action_feedback")
                 .map((event) => (
-                  <div key={event.id} className="rounded-xl border border-blush-100 bg-blush-25 px-3 py-2 text-xs leading-relaxed text-blush-700">
+                  <div key={event.id} className="rounded-xl border border-blush-100 bg-blush-25 px-2.5 py-2 text-[11px] leading-relaxed text-blush-700 sm:px-3 sm:py-2 sm:text-xs">
                     {event.occurredAtText && (
                       <span className="mr-1 font-bold">[{event.occurredAtText}]</span>
                     )}
@@ -462,7 +464,7 @@ export function ActionsBoard() {
 
   if (isLoading) {
     return (
-      <main className="mx-auto w-full max-w-6xl px-5 py-6 sm:px-8 lg:py-10">
+      <main className="mx-auto w-full px-4 py-5 sm:mx-auto sm:max-w-6xl sm:px-6 sm:py-6 lg:px-8 lg:py-10">
         <StatePanel tone="loading" title="正在整理现实行动" description="把演练结果和现实反馈同步过来。" />
       </main>
     );
@@ -470,14 +472,14 @@ export function ActionsBoard() {
 
   if (loadError) {
     return (
-      <main className="mx-auto w-full max-w-6xl px-5 py-6 sm:px-8 lg:py-10">
+      <main className="mx-auto w-full px-4 py-5 sm:mx-auto sm:max-w-6xl sm:px-6 sm:py-6 lg:px-8 lg:py-10">
         <StatePanel tone="error" title="行动页暂时没加载出来" description={loadError} actionLabel="重新加载" onAction={retryLoad} />
       </main>
     );
   }
 
   return (
-    <main className="mx-auto grid w-full max-w-6xl gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[1fr_1fr] lg:py-10">
+    <main className="mx-auto grid w-full max-w-6xl gap-5 px-4 py-5 sm:gap-6 sm:px-6 sm:py-6 lg:grid-cols-[1fr_1fr] lg:px-8 lg:py-10">
       {feedback ? (
         <div className="lg:col-span-2">
           <StatePanel tone="error" title="刚才的操作没有完成" description={feedback} actionLabel="刷新当前数据" onAction={retryLoad} />
@@ -485,15 +487,15 @@ export function ActionsBoard() {
       ) : null}
 
       {/* Actions section */}
-      <section className="rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-2xl shadow-blush-200/40 backdrop-blur">
-        <p className="text-sm font-bold text-blush-700">现实行动</p>
-        <h1 className="mt-2 font-display text-3xl font-semibold tracking-normal text-ink-900">
+      <section className="rounded-[1.75rem] border border-white/70 bg-white/75 p-5 shadow-2xl shadow-blush-200/40 backdrop-blur sm:p-6">
+        <p className="text-xs font-bold text-blush-700 sm:text-sm">现实行动</p>
+        <h1 className="mt-1.5 font-display text-2xl font-semibold tracking-normal text-ink-900 sm:mt-2 sm:text-3xl">
           把演练结果放回现实里。
         </h1>
-        <p className="mt-1 text-xs text-ink-400">
+        <p className="mt-1 text-[10px] text-ink-400 sm:text-xs">
           记录真实发生的反馈，让后续演练更准确。
         </p>
-        <div className="mt-5 grid gap-3">
+        <div className="mt-4 grid gap-2.5 sm:mt-5 sm:grid-gap-3 sm:gap-3">
           {hydratedActions.length ? (
             hydratedActions.map((action) => (
               <ActionCard key={action.id} action={action} onUpdate={updateAction} />
@@ -509,13 +511,13 @@ export function ActionsBoard() {
       </section>
 
       {/* Suggestions section */}
-      <section className="rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-2xl shadow-mint-100/60 backdrop-blur">
-        <p className="text-sm font-bold text-mint-500">待确认情报更新</p>
-        <h2 className="mt-2 text-2xl font-black text-ink-900">AI 只提建议，你来确认。</h2>
-        <div className="mt-6 grid gap-3">
+      <section className="rounded-[1.75rem] border border-white/70 bg-white/75 p-5 shadow-2xl shadow-mint-100/60 backdrop-blur sm:p-6">
+        <p className="text-xs font-bold text-mint-500 sm:text-sm">待确认情报更新</p>
+        <h2 className="mt-1.5 text-xl font-black text-ink-900 sm:mt-2 sm:text-2xl">AI 只提建议，你来确认。</h2>
+        <div className="mt-4 grid gap-2.5 sm:mt-6 sm:gap-3">
           {pendingSuggestions.length ? (
             pendingSuggestions.map((suggestion) => (
-              <article key={suggestion.id} className="rounded-3xl bg-mint-100/55 p-4 text-sm leading-7">
+              <article key={suggestion.id} className="rounded-2xl bg-mint-100/55 p-3.5 text-sm leading-6 sm:rounded-3xl sm:p-4">
                 {(suggestion.suggestionJson.facts ?? []).map((fact, index) => (
                   <p key={index}>
                     事实候选：{fact.label} {fact.value}
@@ -527,23 +529,23 @@ export function ActionsBoard() {
                   </p>
                 ))}
                 <p className="font-bold">置信度：{Math.round(suggestion.confidence * 100)}%</p>
-                <div className="mt-3 flex gap-2">
+                <div className="mt-2.5 flex gap-1.5 sm:mt-3 sm:gap-2">
                   <button
-                    className="inline-flex items-center gap-1 rounded-full bg-white px-4 py-2 font-bold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60"
+                    className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60 sm:gap-1 sm:px-4 sm:py-2 sm:text-sm"
                     disabled={isPending}
                     type="button"
                     onClick={() => resolve(suggestion.id, "accepted")}
                   >
-                    <Check aria-hidden="true" size={16} />
-                    确认入档
+                    <Check aria-hidden="true" size={14} />
+                    确认
                   </button>
                   <button
-                    className="inline-flex items-center gap-1 rounded-full bg-white px-4 py-2 font-bold text-slate-500 transition hover:bg-slate-50 disabled:opacity-60"
+                    className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-slate-500 transition hover:bg-slate-50 disabled:opacity-60 sm:gap-1 sm:px-4 sm:py-2 sm:text-sm"
                     disabled={isPending}
                     type="button"
                     onClick={() => resolve(suggestion.id, "rejected")}
                   >
-                    <SkipForward aria-hidden="true" size={16} />
+                    <SkipForward aria-hidden="true" size={14} />
                     跳过
                   </button>
                 </div>

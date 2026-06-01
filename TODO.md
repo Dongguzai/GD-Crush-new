@@ -179,15 +179,14 @@ Acceptance:
 
 ### [P0] M2.4 Introduce lightweight `演一遍` entry inside chat
 
-Status: Batch 1 complete (TA-initiated contextual invitation implemented)
+Status: Implemented in Batch 1 (2026-05-19)
 
 Dependencies: M2.3
 
 Scope:
 
 - Add a persistent but visually light `演一遍` affordance near the composer.
-- Current implementation supports user-initiated click inside chat.
-- Support two entry paths:
+- Current implementation supports:
   - user-initiated click
   - TA-initiated contextual invitation
 - If recent context is sufficient, seed practice from that context.
@@ -198,6 +197,12 @@ Acceptance:
 - Users can always find a way to start practice without leaving chat.
 - TA can invite practice naturally after first responding in-character.
 - Starting practice does not require understanding any hidden "mode" system.
+
+Test coverage:
+
+- `companion chat returns practiceInvite for real-action-intent messages`
+- `practice invite leads to ta_invite triggerSource when started`
+- `ownership checks apply to practice invite-started chapters`
 
 ### [P0] M2.5 Add first-entry and empty-state behavior for TA chat
 
@@ -547,6 +552,8 @@ Acceptance:
 
 ### [P2] M6.3 Run a mobile visual QA and interaction polish pass
 
+Status: Implemented on 2026-05-23 (Batch 3)
+
 Dependencies: Core UI stabilized
 
 Scope:
@@ -563,6 +570,24 @@ Acceptance:
 
 - Main flows work cleanly on common mobile widths.
 - Inline chapters remain understandable on smaller screens.
+
+Checked viewports: 320x568, 375x812, 390x844, 430x932
+Checked pages: /app (chat), /app/actions, /app/profile, /app/memories, /app/auth
+Checked states: empty, loaded, practice draft, practice active, practice finished
+
+Fixed issues:
+- companion-chat.tsx: Added pb-28 for mobile bottom nav spacing, optimized bubble width (88% mobile vs 82% desktop), reduced padding/margins for smaller screens, action buttons now have condensed labels on mobile
+- app-shell.tsx: Added safe-area padding for bottom nav, increased tap target minimum height to 3.25rem
+- auth/page.tsx: Made form more compact for mobile, sticky header with backdrop blur, condensed label/icon sizes
+- actions-board.tsx: Reduced card padding (3.5 vs 4), condensed action buttons ("已发送" → "发送"), smaller text sizes
+- profile/page.tsx: 3-column info cards (vs 3 equal columns), condensed labels ("现实关系阶段" → "阶段"), smaller padding
+- memories/page.tsx: Reduced card padding and margins for mobile, smaller images (h-28 vs h-36)
+- globals.css: Added safe-area and touch target CSS utilities
+
+Remaining considerations:
+- Real keyboard overlap testing requires device/emulator - CSS safe-area applied
+- Very long message content may need line-height adjustment on 320px
+- iPhone notch area - safe-area-inset applied where possible
 
 ### [P2] M6.4 Add analytics, observability, and AI cost tracking
 
@@ -589,6 +614,8 @@ Acceptance:
 
 ### [P2] M6.5 Add formal authentication and account recovery
 
+Status: Implemented (2026-05-23)
+
 Dependencies: M1.1; external testing readiness
 
 Scope:
@@ -599,11 +626,23 @@ Scope:
   - account recovery
   - cross-device persistence
 - Define migration from anonymous users to formal accounts.
+- Database-backed auth with:
+  - email/password registration with scrypt hashing
+  - session-based authentication
+  - anonymous user data preservation on registration
 
 Acceptance:
 
 - Users can recover their data across sessions and devices.
 - Long-term identity no longer depends on a single browser cookie.
+
+Test coverage:
+
+- `auth: anonymous user registers and preserves crush data`
+- `auth: login and logout preserve data`
+- `auth: duplicate email registration fails`
+- `auth: wrong password fails login`
+- `auth: ownership isolation between users`
 
 ---
 

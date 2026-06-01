@@ -36,7 +36,7 @@ import {
   getDevRealityEvents,
   getDevRealityInferences,
   getDevRealitySignals,
-  getDevSessionById,
+  getDevChatSessionById,
   getDevSuggestions,
   getDevSuggestionById,
   getDevTraits,
@@ -646,6 +646,17 @@ async function buildPracticeAiContext(session: PracticeAiSession) {
   const background = getBackgroundFromContext(realityContext) || session.title || "用户想先演一遍现实中的表达。";
 
   return {
+    crushProfile: active
+      ? {
+          nickname: active.nickname,
+          relationshipOrigin: active.relationshipOrigin,
+          personalitySummary: active.personalitySummary,
+          communicationStyle: active.communicationStyle,
+          userGoal: active.userGoal,
+          userAnxiety: active.userAnxiety,
+          riskLevel: active.riskLevel,
+        }
+      : undefined,
     crushNickname: active?.nickname,
     relationshipStage: active?.realRelationshipStage,
     interactionTemperature: active?.interactionTemperature,
@@ -655,10 +666,12 @@ async function buildPracticeAiContext(session: PracticeAiSession) {
     recentRealityEvents: realityLayer.realityEvents.slice(-5),
     recentRealitySignals: realityLayer.realitySignals.slice(-5),
     recentRealityInferences: realityLayer.realityInferences.slice(-5),
-    messages: sessionMessages.map((message) => ({
-      role: message.role,
-      content: message.content,
-    })),
+    messages: sessionMessages
+      .filter((message) => message.role === "system" || message.role === "user" || message.role === "crush")
+      .map((message) => ({
+        role: message.role,
+        content: message.content,
+      })),
   };
 }
 
@@ -667,7 +680,19 @@ async function generatePracticeTurn(session: PracticeAiSession, message: string)
 
   try {
     const { getDeepSeekService } = await import("@/lib/ai-service");
-    const result = await getDeepSeekService().simulatePracticeTurn(await buildPracticeAiContext(session), message);
+    const context = await buildPracticeAiContext(session);
+    const result = await getDeepSeekService().simulateRealityCrushReply({
+      crushProfile: context.crushProfile,
+      relationshipStage: context.relationshipStage,
+      interactionTemperature: context.interactionTemperature,
+      scenarioType: context.scenarioType,
+      chapterGoal: context.goal,
+      chapterBackground: context.background,
+      realityEvents: context.recentRealityEvents,
+      realitySignals: context.recentRealitySignals,
+      realityInferences: context.recentRealityInferences,
+      practiceMessages: [...context.messages, { role: "user", content: message }],
+    });
     trackAiMetrics("practice_simulation_turn", {
       latencyMs: Date.now() - startedAt,
       success: true,
@@ -924,7 +949,7 @@ async function getCurrentOwnedDraftById(draftId: string) {
 
 async function getCurrentOwnedSessionById(sessionId: string) {
   const session = !hasDatabaseUrl()
-    ? await getDevSessionById(sessionId)
+    ? await getDevChatSessionById(sessionId)
     : (
         await getDb()
           .select()
@@ -2220,19 +2245,12 @@ export async function sendCurrentSimulationMessage(sessionId: string, message: s
         metadataJson: { coachTip },
         createdAt,
       },
-      {
-        sessionId,
-        role: "coach",
-        content: coachTip.advice,
-        metadataJson: coachTip,
-        createdAt,
-      },
     ])
     .returning();
   await db.update(chatSessions).set({ updatedAt: createdAt }).where(eq(chatSessions.id, session.id));
 
-  const [userMessage, crushMessage, coachMessage] = inserted;
-  return { crushReply, coachTip, userMessage, crushMessage, coachMessage };
+  const [userMessage, crushMessage] = inserted;
+  return { crushReply, coachTip, userMessage, crushMessage };
 }
 
 export async function retryCurrentSimulationLastTurn(sessionId: string) {

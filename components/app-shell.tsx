@@ -44,14 +44,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {children}
       </div>
 
-      <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-4 rounded-[1.75rem] border border-white/80 bg-white/85 p-2 shadow-2xl shadow-blush-200/70 backdrop-blur-xl lg:hidden">
+      <nav
+        className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-4 rounded-[1.75rem] border border-white/80 bg-white/85 p-2 shadow-2xl shadow-blush-200/70 backdrop-blur-xl pb-safe lg:hidden"
+        style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+      >
         {navItems.map((item) => (
           <Link
             key={item.href}
             href={item.href}
-            className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl text-[11px] font-bold text-ink-700 transition hover:bg-blush-50 hover:text-blush-700"
+            className="flex min-h-[3.25rem] flex-col items-center justify-center gap-0.5 rounded-2xl text-[10px] font-bold text-ink-700 transition hover:bg-blush-50 hover:text-blush-700 sm:min-h-14 sm:text-[11px]"
           >
-            <item.icon aria-hidden="true" size={20} strokeWidth={2.2} />
+            <item.icon aria-hidden="true" size={19} strokeWidth={2.2} />
             {item.label}
           </Link>
         ))}

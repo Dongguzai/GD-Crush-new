@@ -7,6 +7,19 @@ const eslintConfig = [
   {
     ignores: [".next/**", "node_modules/**", "drizzle/**"],
   },
+  {
+    rules: {
+      // Allow unused variables with underscore prefix (common pattern for intentionally unused params)
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
+    },
+  },
 ];
 
 export default eslintConfig;

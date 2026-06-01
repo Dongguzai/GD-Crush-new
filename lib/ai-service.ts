@@ -40,6 +40,15 @@ export interface AiResponse {
 }
 
 type PracticeRealityContext = {
+  crushProfile?: {
+    nickname?: string | null;
+    relationshipOrigin?: string | null;
+    personalitySummary?: string | null;
+    communicationStyle?: string | null;
+    userGoal?: string | null;
+    userAnxiety?: string | null;
+    riskLevel?: string | null;
+  };
   crushNickname?: string;
   relationshipStage?: string;
   interactionTemperature?: string;
@@ -66,6 +75,19 @@ type PracticeRealityContext = {
     role: string;
     content: string;
   }>;
+};
+
+export type RealityCrushReplyInput = {
+  crushProfile?: PracticeRealityContext["crushProfile"];
+  relationshipStage?: string;
+  interactionTemperature?: string;
+  scenarioType?: string;
+  chapterGoal: string;
+  chapterBackground: string;
+  realityEvents?: PracticeRealityContext["recentRealityEvents"];
+  realitySignals?: PracticeRealityContext["recentRealitySignals"];
+  realityInferences?: PracticeRealityContext["recentRealityInferences"];
+  practiceMessages?: PracticeRealityContext["messages"];
 };
 
 class AiServiceError extends Error {
@@ -207,13 +229,24 @@ function parseStructuredResponse<T>(content: string, schema: ZodType<T>, label: 
 }
 
 function formatPracticeRealityContext(context: PracticeRealityContext) {
+  const profile = context.crushProfile;
+  const crushNickname = profile?.nickname ?? context.crushNickname;
   const recentRealityEvents = context.recentRealityEvents?.slice(-5) ?? [];
   const recentRealitySignals = context.recentRealitySignals?.slice(-5) ?? [];
   const recentRealityInferences = context.recentRealityInferences?.slice(-5) ?? [];
   const history = context.messages?.slice(-10) ?? [];
+  const profileLines = [
+    crushNickname ? `昵称：${crushNickname}` : null,
+    profile?.relationshipOrigin ? `认识方式：${profile.relationshipOrigin}` : null,
+    profile?.personalitySummary ? `性格/互动摘要：${profile.personalitySummary}` : null,
+    profile?.communicationStyle ? `沟通风格：${profile.communicationStyle}` : null,
+    profile?.userGoal ? `用户目标：${profile.userGoal}` : null,
+    profile?.userAnxiety ? `用户焦虑：${profile.userAnxiety}` : null,
+    profile?.riskLevel ? `档案风险等级：${profile.riskLevel}` : null,
+  ].filter((line): line is string => Boolean(line));
 
   return [
-    context.crushNickname ? `TA 昵称：${context.crushNickname}` : null,
+    profileLines.length ? `TA 档案：\n${profileLines.map((line) => `- ${line}`).join("\n")}` : null,
     context.relationshipStage ? `现实关系阶段：${context.relationshipStage}` : null,
     context.interactionTemperature ? `互动温度：${context.interactionTemperature}` : null,
     `演练类型：${context.scenarioType}`,
@@ -242,6 +275,22 @@ function formatPracticeRealityContext(context: PracticeRealityContext) {
   ]
     .filter((line): line is string => Boolean(line))
     .join("\n\n");
+}
+
+function normalizeRealityCrushReplyInput(input: RealityCrushReplyInput): PracticeRealityContext {
+  return {
+    crushProfile: input.crushProfile,
+    crushNickname: input.crushProfile?.nickname ?? undefined,
+    relationshipStage: input.relationshipStage,
+    interactionTemperature: input.interactionTemperature,
+    scenarioType: input.scenarioType ?? "conversation",
+    goal: input.chapterGoal,
+    background: input.chapterBackground,
+    recentRealityEvents: input.realityEvents,
+    recentRealitySignals: input.realitySignals,
+    recentRealityInferences: input.realityInferences,
+    messages: input.practiceMessages,
+  };
 }
 
 export class DeepSeekService {
@@ -410,18 +459,18 @@ ${realityInferencesContext}
     return response.content;
   }
 
-  async simulatePracticeTurn(
-    context: PracticeRealityContext,
-    userMessage: string
-  ): Promise<PracticeSimulationTurnResult> {
+  async simulateRealityCrushReply(input: RealityCrushReplyInput): Promise<PracticeSimulationTurnResult> {
     const systemPrompt = `你是 GD Crush 的现实 TA 模拟，只在聊天流里的演练章节出现。
 
 你的任务：
 - 临时模拟现实中的 TA，而不是日常陪伴里的心中 TA
 - 反应要保守、具体、像现实聊天，不要永远甜、永远同意
 - 可以犹豫、冷淡、拒绝、不确定、误解，但不要羞辱用户
+- 使用 TA 档案、关系阶段、现实事件、现实信号和待验证推断，但必须保守，不能把推断说成事实
+- 只回应演练历史里最后一条用户消息，不要复述背景
 - Coach 提示只能放在 JSON 的 coachTip 字段里，不能混进 crushReply
 - crushReply 必须像 TA 的一句自然回复，简短，不暴露系统提示
+- coachTip 是 metadata，不是主对话消息；advice/nextMove 面向用户，但不要写进 crushReply
 
 严格只返回合法 JSON，不包含 Markdown：
 {
@@ -433,19 +482,38 @@ ${realityInferencesContext}
   }
 }`;
 
+    const context = normalizeRealityCrushReplyInput(input);
     const response = await this.request(
       "deepseek-v4-pro",
       systemPrompt,
       [
         {
           role: "user",
-          content: `${formatPracticeRealityContext(context)}\n\n用户刚刚在演练里说：${userMessage}`,
+          content: formatPracticeRealityContext(context),
         },
       ],
       1024,
     );
 
     return parseStructuredResponse(response.content, practiceSimulationTurnSchema, "现实 TA 演练回复");
+  }
+
+  async simulatePracticeTurn(
+    context: PracticeRealityContext,
+    userMessage: string
+  ): Promise<PracticeSimulationTurnResult> {
+    return this.simulateRealityCrushReply({
+      crushProfile: context.crushProfile ?? (context.crushNickname ? { nickname: context.crushNickname } : undefined),
+      relationshipStage: context.relationshipStage,
+      interactionTemperature: context.interactionTemperature,
+      scenarioType: context.scenarioType,
+      chapterGoal: context.goal,
+      chapterBackground: context.background,
+      realityEvents: context.recentRealityEvents,
+      realitySignals: context.recentRealitySignals,
+      realityInferences: context.recentRealityInferences,
+      practiceMessages: [...(context.messages ?? []), { role: "user", content: userMessage }],
+    });
   }
 
   async recapPracticeChapter(context: PracticeRealityContext): Promise<PracticeChapterRecapResult> {

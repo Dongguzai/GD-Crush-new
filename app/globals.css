@@ -82,3 +82,33 @@ select {
   background: #ffc8d3;
   color: #28212a;
 }
+
+/* Mobile safe area support */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Prevent horizontal scroll on mobile */
+* {
+  overflow-wrap: break-word;
+}
+
+/* Ensure touch targets are large enough */
+button,
+a,
+[role="button"] {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Better touch handling */
+@media (max-width: 768px) {
+  button,
+  input,
+  textarea,
+  select,
+  a,
+  [tabindex] {
+    -webkit-tap-highlight-color: transparent;
+  }
+}

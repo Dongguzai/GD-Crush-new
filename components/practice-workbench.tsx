@@ -153,7 +153,6 @@ export function PracticeWorkbench() {
           ...current,
           `你：${message}`,
           `Crush：${data.crushReply}`,
-          `Coach：${data.coachTip.advice}`,
         ]);
       } catch (error) {
         setSimulationInput(message);

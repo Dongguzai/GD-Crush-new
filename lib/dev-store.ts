@@ -1,6 +1,7 @@
 import "server-only";
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export type DevUser = {
@@ -9,6 +10,26 @@ export type DevUser = {
   ageConfirmedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+/** Auth session for registered users */
+export type DevAuthSession = {
+  id: string;
+  userId: string;
+  expiresAt: string;
+  revokedAt?: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+};
+
+/** Alias for DevAuthSession for backwards compatibility */
+export type DevSession = DevAuthSession;
+
+/** Registered user with email/password */
+export type DevRegisteredUser = {
+  id: string;
+  email: string;
+  passwordHash: string;
 };
 
 export type DevCrushProfile = {
@@ -265,6 +286,10 @@ type DevStoreData = {
   realActions: DevRealAction[];
   profileUpdateSuggestions: DevProfileUpdateSuggestion[];
   memories: DevMemory[];
+  /** Auth sessions for registered users */
+  authSessions: DevAuthSession[];
+  /** Registered users with email/password */
+  registeredUsers: DevRegisteredUser[];
 };
 
 const storeFileName =
@@ -291,6 +316,8 @@ const emptyStore = (): DevStoreData => ({
   realActions: [],
   profileUpdateSuggestions: [],
   memories: [],
+  authSessions: [],
+  registeredUsers: [],
 });
 
 async function readStore(): Promise<DevStoreData> {
@@ -752,14 +779,14 @@ export async function getDevMessages(sessionId: string) {
   return data.messages.filter((message) => message.sessionId === sessionId);
 }
 
-export async function getDevSessionById(sessionId: string) {
-  const data = await readStore();
-  return data.chatSessions.find((session) => session.id === sessionId) ?? null;
-}
-
 export async function getDevMessageById(messageId: string) {
   const data = await readStore();
   return data.messages.find((message) => message.id === messageId) ?? null;
+}
+
+export async function getDevChatSessionById(sessionId: string) {
+  const data = await readStore();
+  return data.chatSessions.find((session) => session.id === sessionId) ?? null;
 }
 
 export async function getDevMessagesForCrush(crushId: string) {
@@ -1175,18 +1202,10 @@ export async function addDevSimulationTurn(
     metadataJson: { coachTip },
     createdAt,
   };
-  const coachMessage: DevMessage = {
-    id: crypto.randomUUID(),
-    sessionId,
-    role: "coach",
-    content: coachTip.advice,
-    metadataJson: coachTip,
-    createdAt,
-  };
-  data.messages.push(userMessage, crushMessage, coachMessage);
+  data.messages.push(userMessage, crushMessage);
   session.updatedAt = createdAt;
   await writeStore(data);
-  return { crushReply, coachTip, userMessage, crushMessage, coachMessage };
+  return { crushReply, coachTip, userMessage, crushMessage };
 }
 
 export async function removeDevSimulationLastTurn(sessionId: string) {
@@ -1482,4 +1501,200 @@ export async function destroyDevCrush(userId: string, crushId: string) {
   });
   await writeStore(data);
   return { destroyedAt };
+}
+
+// ============ Auth Functions ============
+
+const SESSION_MAX_AGE_MS = 60 * 60 * 24 * 30 * 1000; // 30 days
+
+export function isDevSessionValid(session: DevSession): boolean {
+  const now = Date.now();
+  const expiresAt = new Date(session.expiresAt).getTime();
+  return expiresAt > now && !session.revokedAt;
+}
+
+export function getDevSessionById(sessionId: string): DevSession | null {
+  const data = readStoreSync();
+  return data.authSessions.find((s) => s.id === sessionId) ?? null;
+}
+
+function readStoreSync(): DevStoreData {
+  try {
+    const raw = readFileSync(storePath, "utf8");
+    return { ...emptyStore(), ...(JSON.parse(raw) as Partial<DevStoreData>) };
+  } catch {
+    return emptyStore();
+  }
+}
+
+export async function createDevSession(userId: string): Promise<string> {
+  const data = await readStore();
+  const sessionId = crypto.randomUUID();
+  const nowMs = Date.now();
+  const expiresAt = new Date(nowMs + SESSION_MAX_AGE_MS).toISOString();
+  const now = new Date(nowMs).toISOString();
+
+  const session: DevSession = {
+    id: sessionId,
+    userId,
+    expiresAt,
+    revokedAt: null,
+    createdAt: now,
+    lastSeenAt: now,
+  };
+
+  data.authSessions.push(session);
+  await writeStore(data);
+  return sessionId;
+}
+
+export async function revokeDevSession(sessionId: string): Promise<void> {
+  const data = await readStore();
+  const session = data.authSessions.find((s) => s.id === sessionId);
+  if (session) {
+    session.revokedAt = new Date().toISOString();
+    await writeStore(data);
+  }
+}
+
+export async function registerDevUser(
+  email: string,
+  passwordHash: string,
+  currentUserId?: string | null
+): Promise<{
+  success: boolean;
+  userId?: string;
+  sessionId?: string;
+  error?: string;
+}> {
+  const data = await readStore();
+
+  // Check if email already exists
+  const existingUser = data.registeredUsers.find((u) => u.email === email);
+  if (existingUser) {
+    return { success: false, error: "Email already registered" };
+  }
+
+  // Determine which user to upgrade
+  let targetUserId = currentUserId;
+
+  if (!targetUserId) {
+    // No current user, create new user
+    targetUserId = crypto.randomUUID();
+    // Create the user record
+    data.users.push({
+      id: targetUserId,
+      email: null,
+      ageConfirmedAt: null,
+      createdAt: now(),
+      updatedAt: now(),
+    });
+  }
+
+  // Add to registered users (store plain password for dev simplicity)
+  data.registeredUsers.push({
+    id: targetUserId,
+    email,
+    passwordHash, // In dev mode, this is stored as plain text for easy testing
+  });
+
+  // Upgrade the user with email
+  const user = data.users.find((u) => u.id === targetUserId);
+  if (user) {
+    user.email = email;
+    user.updatedAt = now();
+  }
+
+  // Create session inline with the same data to ensure atomicity
+  const sessionId = crypto.randomUUID();
+  const nowMs = Date.now();
+  const expiresAt = new Date(nowMs + SESSION_MAX_AGE_MS).toISOString();
+  const nowISO = new Date(nowMs).toISOString();
+  data.authSessions.push({
+    id: sessionId,
+    userId: targetUserId,
+    expiresAt,
+    revokedAt: null,
+    createdAt: nowISO,
+    lastSeenAt: nowISO,
+  });
+
+  // Write all changes atomically
+  await writeStore(data);
+
+  return { success: true, userId: targetUserId, sessionId };
+}
+
+export async function loginDevUser(
+  email: string,
+  password: string
+): Promise<{
+  success: boolean;
+  sessionId?: string;
+  error?: string;
+}> {
+  const data = await readStore();
+
+  const registeredUser = data.registeredUsers.find((u) => u.email === email);
+  if (!registeredUser) {
+    return { success: false, error: "Invalid email or password" };
+  }
+
+  // Verify password - in dev mode it may be plain text or scrypt hash
+  let isValid = false;
+  const storedHash = registeredUser.passwordHash;
+
+  if (storedHash.startsWith("scrypt:")) {
+    // Password was hashed with scrypt, verify using same logic as auth.ts
+    const [scheme, salt, key] = storedHash.split(":");
+    if (scheme === "scrypt" && salt && key) {
+      const { scrypt, timingSafeEqual } = await import("node:crypto");
+      const { promisify } = await import("node:util");
+      const scryptAsync = promisify(scrypt);
+      const storedKey = Buffer.from(key, "hex");
+      const derivedKey = (await scryptAsync(password, salt, storedKey.length)) as Buffer;
+      isValid = storedKey.length === derivedKey.length && timingSafeEqual(storedKey, derivedKey);
+    }
+  } else {
+    // Plain text password (legacy/dev simplicity)
+    isValid = storedHash === password;
+  }
+
+  if (!isValid) {
+    return { success: false, error: "Invalid email or password" };
+  }
+
+  // Create session inline to ensure atomicity
+  const sessionId = crypto.randomUUID();
+  const nowMs = Date.now();
+  const expiresAt = new Date(nowMs + SESSION_MAX_AGE_MS).toISOString();
+  const nowISO = new Date(nowMs).toISOString();
+  data.authSessions.push({
+    id: sessionId,
+    userId: registeredUser.id,
+    expiresAt,
+    revokedAt: null,
+    createdAt: nowISO,
+    lastSeenAt: nowISO,
+  });
+
+  // Write all changes atomically
+  await writeStore(data);
+
+  return { success: true, sessionId };
+}
+
+export function getDevUserEmail(sessionId: string): string | null {
+  const data = readStoreSync();
+  const session = data.authSessions.find((s) => s.id === sessionId);
+  if (!session || !isDevSessionValid(session)) {
+    return null;
+  }
+
+  const registeredUser = data.registeredUsers.find((u) => u.id === session.userId);
+  if (!registeredUser) {
+    return null;
+  }
+
+  return registeredUser?.email ?? null;
 }

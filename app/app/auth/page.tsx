@@ -75,30 +75,31 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blush-50 to-white">
+    <div className="min-h-screen bg-gradient-to-b from-blush-50 to-white pb-safe" style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
       {/* Header */}
-      <header className="p-4">
+      <header className="sticky top-0 z-10 p-4 backdrop-blur">
         <Link
           href="/app"
-          className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-bold text-ink-700 shadow-sm transition hover:bg-blush-50"
+          className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-2 text-sm font-bold text-ink-700 shadow-sm transition hover:bg-blush-50 sm:px-4 sm:py-2.5"
         >
           <ArrowLeft size={16} />
-          返回聊天
+          <span className="hidden sm:inline">返回聊天</span>
+          <span className="sm:hidden">返回</span>
         </Link>
       </header>
 
       {/* Main Content */}
-      <main className="mx-auto max-w-md px-5 py-12">
-        <div className="rounded-[2rem] border border-white/70 bg-white/75 p-8 shadow-2xl shadow-blush-200/40 backdrop-blur">
+      <main className="mx-auto max-w-md px-4 py-8 sm:px-5 sm:py-12">
+        <div className="rounded-[1.75rem] border border-white/70 bg-white/75 p-6 shadow-2xl shadow-blush-200/40 backdrop-blur sm:rounded-[2rem] sm:p-8">
           {/* Logo/Title */}
-          <div className="mb-8 text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-ink-900 text-white">
-              <User size={32} />
+          <div className="mb-6 text-center sm:mb-8">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-ink-900 text-white sm:mb-4 sm:h-16 sm:w-16">
+              <User size={28} className="sm:size-8" />
             </div>
-            <h1 className="font-display text-3xl font-semibold text-ink-900">
+            <h1 className="font-display text-2xl font-semibold text-ink-900 sm:text-3xl">
               {mode === "login" ? "欢迎回来" : "创建账号"}
             </h1>
-            <p className="mt-2 text-sm text-ink-600">
+            <p className="mt-1.5 text-xs text-ink-600 sm:mt-2 sm:text-sm">
               {mode === "login"
                 ? "登录以保存跨设备数据"
                 : "注册后可跨设备同步你的数据"}
@@ -107,28 +108,28 @@ export default function AuthPage() {
 
           {/* Success Message */}
           {success ? (
-            <div className="rounded-2xl bg-mint-100 p-6 text-center">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-mint-500 text-white">
-                <Check size={24} />
+            <div className="rounded-2xl bg-mint-100 p-5 text-center sm:p-6">
+              <div className="mx-auto mb-2.5 flex h-10 w-10 items-center justify-center rounded-full bg-mint-500 text-white sm:mb-3 sm:h-12 sm:w-12">
+                <Check size={22} />
               </div>
               <p className="font-bold text-ink-900">
                 {mode === "register" ? "账号创建成功！" : "登录成功！"}
               </p>
-              <p className="mt-1 text-sm text-ink-600">正在跳转到聊天...</p>
+              <p className="mt-1 text-xs text-ink-600 sm:text-sm">正在跳转到聊天...</p>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
               {/* Error Message */}
               {error && (
-                <div className="rounded-2xl bg-red-50 p-4 text-sm text-red-600">
+                <div className="rounded-2xl bg-red-50 p-3.5 text-xs text-red-600 sm:p-4 sm:text-sm">
                   {error}
                 </div>
               )}
 
               {/* Email */}
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-sm font-bold text-ink-700">
-                  <Mail size={16} />
+              <div className="space-y-1.5 sm:space-y-2">
+                <label className="flex items-center gap-1.5 text-xs font-bold text-ink-700 sm:gap-2 sm:text-sm">
+                  <Mail size={14} className="sm:size-4" />
                   邮箱
                 </label>
                 <input
@@ -137,14 +138,14 @@ export default function AuthPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="your@email.com"
                   required
-                  className="min-h-12 w-full rounded-full border border-blush-100 bg-white px-4 text-base outline-none focus:border-blush-500"
+                  className="min-h-11 w-full rounded-full border border-blush-100 bg-white px-4 text-sm outline-none transition focus:border-blush-500 sm:min-h-12 sm:text-base"
                 />
               </div>
 
               {/* Password */}
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-sm font-bold text-ink-700">
-                  <Lock size={16} />
+              <div className="space-y-1.5 sm:space-y-2">
+                <label className="flex items-center gap-1.5 text-xs font-bold text-ink-700 sm:gap-2 sm:text-sm">
+                  <Lock size={14} className="sm:size-4" />
                   密码
                 </label>
                 <input
@@ -154,15 +155,15 @@ export default function AuthPage() {
                   placeholder={mode === "register" ? "至少 8 个字符" : "输入密码"}
                   required
                   minLength={mode === "register" ? 8 : 1}
-                  className="min-h-12 w-full rounded-full border border-blush-100 bg-white px-4 text-base outline-none focus:border-blush-500"
+                  className="min-h-11 w-full rounded-full border border-blush-100 bg-white px-4 text-sm outline-none transition focus:border-blush-500 sm:min-h-12 sm:text-base"
                 />
               </div>
 
               {/* Confirm Password (register only) */}
               {mode === "register" && (
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm font-bold text-ink-700">
-                    <Lock size={16} />
+                <div className="space-y-1.5 sm:space-y-2">
+                  <label className="flex items-center gap-1.5 text-xs font-bold text-ink-700 sm:gap-2 sm:text-sm">
+                    <Lock size={14} className="sm:size-4" />
                     确认密码
                   </label>
                   <input
@@ -172,7 +173,7 @@ export default function AuthPage() {
                     placeholder="再次输入密码"
                     required
                     minLength={8}
-                    className="min-h-12 w-full rounded-full border border-blush-100 bg-white px-4 text-base outline-none focus:border-blush-500"
+                    className="min-h-11 w-full rounded-full border border-blush-100 bg-white px-4 text-sm outline-none transition focus:border-blush-500 sm:min-h-12 sm:text-base"
                   />
                 </div>
               )}
@@ -181,13 +182,13 @@ export default function AuthPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="min-h-12 w-full rounded-full bg-ink-900 font-bold text-white transition hover:bg-blush-700 disabled:opacity-50"
+                className="min-h-11 w-full rounded-full bg-ink-900 text-sm font-bold text-white transition hover:bg-blush-700 disabled:opacity-50 sm:min-h-12 sm:text-base"
               >
                 {loading ? "处理中..." : mode === "login" ? "登录" : "注册"}
               </button>
 
               {/* Toggle Mode */}
-              <p className="text-center text-sm text-ink-600">
+              <p className="text-center text-xs text-ink-600 sm:text-sm">
                 {mode === "login" ? "还没有账号？" : "已有账号？"}
                 <button
                   type="button"
@@ -204,10 +205,10 @@ export default function AuthPage() {
           )}
 
           {/* Continue as Guest */}
-          <div className="mt-6 border-t border-blush-100 pt-6">
+          <div className="mt-5 border-t border-blush-100 pt-5 sm:mt-6 sm:pt-6">
             <Link
               href="/app"
-              className="block text-center text-sm text-ink-500 hover:text-blush-600"
+              className="block text-center text-xs text-ink-500 hover:text-blush-600 sm:text-sm"
             >
               稍后再说，先去聊天
             </Link>
@@ -215,7 +216,7 @@ export default function AuthPage() {
         </div>
 
         {/* Privacy Note */}
-        <p className="mt-6 text-center text-xs text-ink-400">
+        <p className="mt-5 text-center text-[10px] text-ink-400 sm:mt-6 sm:text-xs">
           继续使用即表示你同意我们的隐私政策。
           我们不会分享你的个人信息。
         </p>

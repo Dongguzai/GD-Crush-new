@@ -22,6 +22,8 @@ let fakeAiMode = "valid";
 let lastCompanionSystemPrompt = "";
 let originalNextEnv = "";
 let originalTsconfig = "";
+// Track auth session cookies per user
+const authSessionCookies = new Map();
 
 async function findFreePort() {
   return new Promise((resolve, reject) => {
@@ -268,6 +270,12 @@ async function jsonRequest(path, options = {}) {
   if (options.userId) {
     headers.set("cookie", userCookie(options.userId));
   }
+  // Include auth session cookie if this user has one
+  if (options.userId && authSessionCookies.has(options.userId)) {
+    const existingCookie = headers.get("cookie") ?? "";
+    const sessionCookie = `gd_session_id=${authSessionCookies.get(options.userId)}`;
+    headers.set("cookie", existingCookie ? `${existingCookie}; ${sessionCookie}` : sessionCookie);
+  }
   if (options.body !== undefined) {
     headers.set("content-type", "application/json");
   }
@@ -278,7 +286,14 @@ async function jsonRequest(path, options = {}) {
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
   const body = await response.json().catch(() => null);
-  return { response, body };
+  // Capture session cookie from Set-Cookie header for auth endpoints
+  const setCookieHeader = response.headers.get("set-cookie");
+  const sessionCookieMatch = setCookieHeader?.match(/gd_session_id=([^;]+)/);
+  const sessionId = sessionCookieMatch?.[1];
+  if (sessionId && options.userId) {
+    authSessionCookies.set(options.userId, sessionId);
+  }
+  return { response, body, sessionId };
 }
 
 async function createReadyUser(userId = randomUUID()) {
@@ -581,6 +596,8 @@ test("practice chapters persist inside companion chat and can seed actions", asy
   });
   assert.equal(result.response.status, 200);
   assert.equal(result.body.crushReply, "我听到了，不过我可能需要一点时间想想。");
+  assert.ok(result.body.coachTip);
+  assert.equal(result.body.coachMessage, undefined);
 
   result = await jsonRequest("/api/practice/full-simulation/retry-last", {
     method: "POST",
@@ -1456,4 +1473,164 @@ test("ownership checks apply to practice invite-started chapters", async () => {
   // The key is that intruder cannot access owner's data
   assert.ok(result.body.sessionId, "Intruder can create their own session");
   assert.notEqual(result.body.chapter.crushId, inviteResult.body.practiceInvite?.sourceMessageId);
+});
+
+test("auth: anonymous user registers and preserves crush data", async () => {
+  const userId = randomUUID();
+
+  // Step 1: Create anonymous user with a crush
+  let result = await createReadyUser(userId);
+  assert.ok(result.crush.id, "Should create crush");
+
+  // Step 2: Check not authenticated yet
+  result = await jsonRequest("/api/auth/me", { method: "GET", userId });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.isAuthenticated, false, "Should not be authenticated");
+  assert.ok(result.body.userId, "Should have userId");
+
+  // Step 3: Register with email/password
+  result = await jsonRequest("/api/auth/register", {
+    method: "POST",
+    userId,
+    body: { email: "test@example.com", password: "testpassword123" },
+  });
+  assert.equal(result.response.status, 200, "Registration should succeed");
+  assert.equal(result.body.success, true);
+  assert.ok(result.body.userId);
+
+  // Step 4: Should now be authenticated
+  result = await jsonRequest("/api/auth/me", { method: "GET", userId });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.isAuthenticated, true, "Should be authenticated after register");
+  assert.equal(result.body.email, "test@example.com");
+  assert.ok(result.body.userId);
+
+  // Step 5: Crush data should still be accessible
+  result = await jsonRequest("/api/crush", { method: "GET", userId });
+  assert.equal(result.response.status, 200);
+  assert.ok(result.body.profile, "Crush data should be preserved after registration");
+});
+
+test("auth: login and logout preserve data", async () => {
+  const userId = randomUUID();
+
+  // Step 1: Create user and register
+  await createReadyUser(userId);
+
+  // Register first
+  let result = await jsonRequest("/api/auth/register", {
+    method: "POST",
+    userId,
+    body: { email: "user@example.com", password: "password123456" },
+  });
+  assert.equal(result.response.status, 200);
+
+  // Step 2: Logout
+  result = await jsonRequest("/api/auth/logout", { method: "POST", userId });
+  assert.equal(result.response.status, 200);
+
+  // Clear the session cookie since we logged out
+  authSessionCookies.delete(userId);
+
+  // Step 3: Should not be authenticated
+  result = await jsonRequest("/api/auth/me", { method: "GET", userId });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.isAuthenticated, false, "Should not be authenticated after logout");
+
+  // Step 4: Login again - pass userId so session cookie is captured
+  result = await jsonRequest("/api/auth/login", {
+    method: "POST",
+    userId, // Pass userId so the session cookie is captured
+    body: { email: "user@example.com", password: "password123456" },
+  });
+  assert.equal(result.response.status, 200, "Login should succeed");
+  assert.equal(result.body.success, true);
+
+  // Step 5: Should be authenticated again and data preserved
+  result = await jsonRequest("/api/auth/me", { method: "GET", userId });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.isAuthenticated, true);
+  assert.equal(result.body.email, "user@example.com");
+
+  // Crush data should be preserved
+  result = await jsonRequest("/api/crush", { method: "GET", userId });
+  assert.equal(result.response.status, 200);
+  assert.ok(result.body.profile, "Crush data should be preserved after re-login");
+});
+
+test("auth: duplicate email registration fails", async () => {
+  const userId = randomUUID();
+
+  // Register first user - await to ensure write completes before second request
+  let result = await jsonRequest("/api/auth/register", {
+    method: "POST",
+    userId,
+    body: { email: "duplicate@example.com", password: "password123456" },
+  });
+  assert.equal(result.response.status, 200);
+
+  // Try to register with same email from different user - wait for first to complete
+  await new Promise((resolve) => setTimeout(resolve, 100)); // Ensure first registration is persisted
+  const userId2 = randomUUID();
+  result = await jsonRequest("/api/auth/register", {
+    method: "POST",
+    userId: userId2,
+    body: { email: "duplicate@example.com", password: "password123456" },
+  });
+  assert.equal(result.response.status, 400, "Duplicate email should fail");
+  assert.equal(result.body.error, "Email already registered");
+});
+
+test("auth: wrong password fails login", async () => {
+  const userId = randomUUID();
+
+  // Register user
+  await jsonRequest("/api/auth/register", {
+    method: "POST",
+    userId,
+    body: { email: "wrongpw@example.com", password: "correctpassword123" },
+  });
+
+  // Try to login with wrong password
+  const result = await jsonRequest("/api/auth/login", {
+    method: "POST",
+    userId: null,
+    body: { email: "wrongpw@example.com", password: "wrongpassword" },
+  });
+  assert.equal(result.response.status, 401, "Wrong password should fail");
+  assert.ok(result.body.error);
+});
+
+test("auth: ownership isolation between users", async () => {
+  const user1 = await createReadyUser();
+  const user2 = randomUUID();
+
+  // Register user 1
+  await jsonRequest("/api/auth/register", {
+    method: "POST",
+    userId: user1.userId,
+    body: { email: "user1@example.com", password: "password123456" },
+  });
+
+  // Create crush for user 2
+  let result = await jsonRequest("/api/crush", {
+    method: "POST",
+    userId: user2,
+    body: {
+      nickname: "Other User's Crush",
+      relationshipOrigin: "friend",
+      currentStageGuess: "普通朋友",
+    },
+  });
+  assert.equal(result.response.status, 200);
+  const user2CrushId = result.body.profile.id;
+
+  // User 1 should NOT be able to access user 2's crush
+  result = await jsonRequest(`/api/crush/${user2CrushId}`, { method: "GET", userId: user1.userId });
+  assert.notEqual(result.response.status, 200, "Cross-user crush access should fail");
+
+  // User 1 should only see their own crush
+  result = await jsonRequest("/api/crush", { method: "GET", userId: user1.userId });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.profile.nickname, "小林", "User 1 should see their own crush");
 });

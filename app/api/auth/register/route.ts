@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { registerUser, getCurrentUserId, migrateAnonymousToAuthenticated } from "@/lib/auth";
+import { registerUser, getCurrentUserId } from "@/lib/auth";
 import { handleApiError } from "@/lib/errors";
 
 const registerSchema = z.object({
@@ -22,21 +22,17 @@ export async function POST(request: Request) {
 
     const { email, password } = parsed.data;
 
-    // Get current anonymous user (for migration)
-    const anonymousUserId = await getCurrentUserId();
+    // Get current user ID (might be anonymous) for in-place upgrade
+    const currentUserId = await getCurrentUserId();
 
-    const result = await registerUser(email, password);
+    // Register user - this upgrades the existing anonymous user if currentUserId exists
+    const result = await registerUser(email, password, currentUserId);
 
     if (!result.success) {
       return NextResponse.json(
         { error: result.error },
         { status: 400 }
       );
-    }
-
-    // Migrate anonymous user data if exists
-    if (anonymousUserId && result.userId) {
-      await migrateAnonymousToAuthenticated(anonymousUserId, result.userId);
     }
 
     return NextResponse.json({
